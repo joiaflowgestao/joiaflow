@@ -151,19 +151,18 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
 
       <div>
         <span className="field-label">{items.length ? 'Adicionar mais itens' : 'Itens da venda'}</span>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6" aria-label="Adicionar item por categoria">
+        <div className="grid grid-cols-4 gap-2 sm:grid-cols-7" aria-label="Adicionar item por categoria">
           {categories.data.map((c) => {
             const qty = items.filter((i) => i.category_id === c.id).reduce((a, i) => a + i.quantity, 0);
             return (
               <button key={c.id} type="button" onClick={() => addItem(c.id)}
                 className={cn(
-                  'relative flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-medium transition',
+                  'relative flex flex-col items-center gap-1.5 rounded-xl border px-1 py-3 text-[11px] font-medium transition sm:text-xs',
                   qty ? 'border-gold-400 bg-navy text-ivory' : 'border-navy/10 bg-white text-navy/70 hover:border-gold-300 hover:bg-gold-50',
                 )}>
                 {qty > 0 && <span className="absolute right-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-gold-400 px-1 text-[11px] font-bold text-navy">{qty}</span>}
                 <CategoryIcon slug={c.slug} className={cn('h-7 w-7', qty ? 'text-gold-400' : 'text-navy/60')} />
                 {c.name}
-                <Plus className={cn('absolute bottom-1.5 right-1.5 h-3 w-3', qty ? 'text-gold-300' : 'text-navy/30')} />
               </button>
             );
           })}
@@ -175,27 +174,27 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
             {items.map((it) => {
               const cat = catById.get(it.category_id);
               return (
-                <li key={it.key} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:flex-nowrap">
-                  <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-navy">
+                <li key={it.key} className="flex flex-wrap items-center gap-x-2 gap-y-2 px-3 py-2.5 sm:flex-nowrap sm:gap-x-3">
+                  <span className="flex min-w-0 flex-1 basis-[calc(100%-48px)] items-center gap-2 text-sm font-medium text-navy sm:basis-auto">
                     <CategoryIcon slug={cat?.slug ?? ''} className="h-5 w-5 shrink-0 text-gold-500" />
                     <span className="truncate">{cat?.name}</span>
                   </span>
-                  <div className="flex items-center rounded-lg border border-navy/15" aria-label="Quantidade">
+                  <div className="order-3 flex items-center rounded-lg border border-navy/15 sm:order-none" aria-label="Quantidade">
                     <button type="button" className="p-2 text-navy/60 hover:text-navy disabled:opacity-30" disabled={it.quantity <= 1}
                       onClick={() => updateItem(it.key, { quantity: it.quantity - 1 })} aria-label="Diminuir"><Minus className="h-3.5 w-3.5" /></button>
                     <span className="w-7 text-center text-sm font-semibold text-navy">{it.quantity}</span>
                     <button type="button" className="p-2 text-navy/60 hover:text-navy disabled:opacity-30" disabled={it.quantity >= 999}
                       onClick={() => updateItem(it.key, { quantity: it.quantity + 1 })} aria-label="Aumentar"><Plus className="h-3.5 w-3.5" /></button>
                   </div>
-                  <div className="relative w-32">
+                  <div className="relative order-3 min-w-0 flex-1 sm:order-none sm:w-32 sm:flex-none">
                     <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-semibold text-navy/45">R$</span>
                     <input inputMode="numeric" placeholder="0,00" value={it.unit_text} autoFocus={focusKey === it.key}
                       aria-label={`Valor unitário de ${cat?.name ?? 'item'}`}
                       onChange={(e) => { const m = maskCentsInput(e.target.value); updateItem(it.key, { unit_cents: m.cents, unit_text: m.display }); }}
                       className={cn('field-input py-2 pl-9 text-right font-semibold', it.unit_cents <= 0 && errors.items && 'border-red-600')} />
                   </div>
-                  <span className="w-24 text-right text-sm font-semibold text-navy">{formatCents(it.quantity * it.unit_cents)}</span>
-                  <button type="button" onClick={() => removeItem(it.key)} className="rounded-lg p-2 text-navy/40 hover:bg-red-50 hover:text-red-700" aria-label="Remover item">
+                  <span className="order-3 w-20 text-right text-sm font-semibold text-navy sm:order-none sm:w-24">{formatCents(it.quantity * it.unit_cents)}</span>
+                  <button type="button" onClick={() => removeItem(it.key)} className="order-2 rounded-lg p-2 text-navy/40 hover:bg-red-50 hover:text-red-700 sm:order-none" aria-label="Remover item">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </li>
