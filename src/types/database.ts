@@ -11,6 +11,7 @@ export interface Organization {
   email: string | null;
   active: boolean;
   sellers_can_edit_sales: boolean;
+  commission_percent?: number;
   created_at: string;
   updated_at: string;
 }
@@ -121,12 +122,27 @@ export interface InstallmentWithSale extends Installment {
   };
 }
 
-export interface SummaryItem { id: string; name: string; slug?: string; total_cents: number; count: number }
+export interface SummaryItem { id: string; name: string; slug?: string; total_cents: number; count: number; commission_percent?: number; commission_cents?: number }
 export interface SalesSummary {
   total_cents: number;
   count: number;
   items_count?: number;
+  commission_cents?: number;
   by_category: SummaryItem[];
   by_seller: SummaryItem[];
   by_day: { day: string; total_cents: number; count: number }[];
+}
+
+/** Lançamento financeiro manual (controle pessoal, separado das vendas). */
+export interface FinancialEntry {
+  id: string;
+  user_id: string;
+  organization_id: string | null;
+  entry_date: string; // AAAA-MM-DD
+  kind: 'in' | 'out';
+  description: string;
+  amount_cents: number;
+  created_at: string;
+  updated_at: string;
+  user?: Pick<Profile, 'full_name'> | null;
 }

@@ -182,6 +182,48 @@ insert into pg_temp.results select 'Venda antiga/direta ganha 1 item automático
 reset role;
 
 insert into pg_temp.results select 'Venda de A intacta após tentativa de B1', (select count(*)=0 from public.sales where customer_name='Hack');
+-- 11) Comissão (30%)
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+insert into pg_temp.results select 'Comissão de B1 = 30% das vendas dele',
+  (select (r->>'commission_cents')::bigint = round((r->>'total_cents')::bigint * 0.30)
+          and (r->'by_seller'->0->>'commission_percent')::numeric = 30
+     from (select public.sales_summary(now()-interval '1 day', now()+interval '1 day') r) z);
+reset role;
+
+-- 12) Lançamentos financeiros
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+insert into public.financial_entries (user_id, organization_id, entry_date, kind, description, amount_cents)
+values ('00000000-0000-0000-0000-0000000000a2', 'b0000000-0000-0000-0000-000000000000', current_date, 'in', 'Recebi da Maria  (pix)', 5000);
+insert into pg_temp.results select 'Lançamento sempre fica com o próprio usuário e empresa',
+  (select user_id='00000000-0000-0000-0000-0000000000a1' and organization_id='a0000000-0000-0000-0000-000000000000' and description='Recebi da Maria (pix)'
+     from public.financial_entries where description like 'Recebi da Maria%');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2');
+insert into public.financial_entries (entry_date, kind, description, amount_cents) values (current_date, 'out', 'Gasolina', 2000);
+insert into pg_temp.results select 'A2 não vê lançamentos de A1', (select count(*)=1 from public.financial_entries);
+with u as (update public.financial_entries set amount_cents=1 where description like 'Recebi%' returning 1)
+insert into pg_temp.results select 'A2 não edita lançamento de A1', (select count(*)=0 from u);
+with d as (delete from public.financial_entries where description like 'Recebi%' returning 1)
+insert into pg_temp.results select 'A2 não exclui lançamento de A1', (select count(*)=0 from d);
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+insert into pg_temp.results select 'B1 não vê lançamentos da empresa A', (select count(*)=0 from public.financial_entries);
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a9');
+insert into pg_temp.results select 'Gestor A vê lançamentos da empresa A', (select count(*)=2 from public.financial_entries);
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000ad');
+insert into pg_temp.results select 'Admin vê todos os lançamentos', (select count(*)=2 from public.financial_entries);
+reset role;
+select pg_temp.expect_error('Lançamento com valor zero rejeitado', '00000000-0000-0000-0000-0000000000a1',
+  $$insert into public.financial_entries (entry_date, description, amount_cents) values (current_date, 'Teste', 0)$$);
+select pg_temp.expect_error('Inativo não lança', '00000000-0000-0000-0000-0000000000a3',
+  $$insert into public.financial_entries (entry_date, description, amount_cents) values (current_date, 'Teste', 100)$$);
+set role anon;
+do $$ begin perform 1 from public.financial_entries; insert into pg_temp.results values ('Anônimo sem lançamentos', false);
+exception when insufficient_privilege then insert into pg_temp.results values ('Anônimo sem lançamentos', true); end $$;
+reset role;
+
 insert into pg_temp.results select 'Auditoria registrou soft_delete', exists(select 1 from public.audit_logs where action='soft_delete');
 
 select (case when ok then 'PASS' else 'FAIL' end) || '  ' || name from pg_temp.results;

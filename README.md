@@ -13,7 +13,8 @@ Arquitetura detalhada: [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)
 | Dashboard (indicadores, gráficos, parcelas a receber) | ✅ |
 | Nova venda (categorias visuais, parcelas, vencimentos) | ✅ |
 | Histórico (filtros, busca, paginação, edição/exclusão auditadas, pagamentos) | ✅ |
-| Relatórios mensais (comparativos, PDF e Excel) | ✅ |
+| Relatórios mensais (comparativos, comissão, PDF e Excel) | ✅ |
+| Lançamentos financeiros (controle pessoal de entradas e saídas) | ✅ |
 | Vendedores (cadastro pelo admin, senha, ativar/desativar) | ✅ |
 | Empresas (gestão de várias empresas) | ⏳ em desenvolvimento |
 
@@ -48,6 +49,9 @@ No **SQL Editor**, execute **em ordem** os arquivos de `supabase/migrations/`:
 4. `20261113000004_profiles_contact_reports.sql`
 5. `20261113000005_installments.sql`
 6. `20261113000006_sale_items.sql`
+7. `20261113000007_category_pulseira.sql`
+8. `20261113000008_category_tornozeleira.sql`
+9. `20261113000009_commission_financial_entries.sql`
 
 (Ou, com o Supabase CLI: `npx supabase link --project-ref SEU_REF && npx supabase db push`.)
 
@@ -86,7 +90,7 @@ npm run dev                  # http://localhost:5173/joiaflow/
 | `npm run dev` | Servidor de desenvolvimento |
 | `npm run build` | Typecheck + build de produção |
 | `npm test` | Testes unitários (dinheiro, parcelas, fuso horário) |
-| `./supabase/tests/run.sh` | 49 testes de segurança/parcelas num PostgreSQL local descartável |
+| `./supabase/tests/run.sh` | 60 testes de segurança/parcelas num PostgreSQL local descartável |
 
 ## Segurança — resumo
 - Sem cadastro público; usuários só pela Edge Function `admin-users`.

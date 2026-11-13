@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, FileSpreadsheet, FileText, Receipt, TrendingUp, Wallet } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, BadgePercent, FileSpreadsheet, FileText, Receipt, TrendingUp, Wallet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CHART, compactBRL, tooltipStyle } from '@/components/charts/theme';
@@ -34,7 +34,7 @@ function Delta({ cur, prev }: { cur: number; prev: number }) {
 }
 
 export function ReportsPage() {
-  const { isAdmin, isPlatformAdmin } = useAuth();
+  const { isAdmin, isPlatformAdmin, organization } = useAuth();
   const toast = useToast();
   const orgs = useOrganizations();
   const profiles = useProfiles();
@@ -86,6 +86,10 @@ export function ReportsPage() {
   }
 
   const loading = cur.loading || before.loading;
+  // Percentual de comissão: o da empresa (padrão 30%)
+  const rates = [...new Set(s.by_seller.map((v) => Number(v.commission_percent ?? 30)))];
+  const pct = rates.length === 1 ? rates[0] : rates.length === 0 ? Number(organization?.commission_percent ?? orgs.data.find((o) => o.id === orgId)?.commission_percent ?? 30) : null;
+  const pctLabel = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
 
   return (
     <>
@@ -101,7 +105,7 @@ export function ReportsPage() {
       />
 
       <Card className="mb-6">
-        <CardBody className="grid gap-3 pt-5 sm:grid-cols-2 lg:grid-cols-4 sm:pt-6">
+        <CardBody className="grid grid-cols-2 gap-3 pt-5 lg:grid-cols-4 sm:pt-6">
           <Select label="Mês" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
             {MONTHS_PT.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
           </Select>
@@ -125,10 +129,12 @@ export function ReportsPage() {
 
       {cur.error && <p className="mb-4 text-sm text-red-700">{cur.error}</p>}
 
-      <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
+      <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <Kpi label="Faturamento" icon={Wallet} value={formatCents(s.total_cents)} delta={<Delta cur={s.total_cents} prev={before.data.total_cents} />} loading={loading} highlight />
         <Kpi label="Quantidade de vendas" icon={Receipt} value={`${s.count}`} sub={`${s.items_count ?? 0} peças`} delta={<Delta cur={s.count} prev={before.data.count} />} loading={loading} />
         <Kpi label="Ticket médio" icon={TrendingUp} value={formatCents(ticket(s))} delta={<Delta cur={ticket(s)} prev={ticket(before.data)} />} loading={loading} />
+        <Kpi gold label={pct !== null ? `Comissão (${pctLabel(pct)})` : 'Comissão'} icon={BadgePercent} value={formatCents(s.commission_cents ?? 0)}
+          delta={<span className="text-navy/55">{pct !== null ? `${pctLabel(pct)} sobre ${formatCents(s.total_cents)}` : 'percentuais diferentes por empresa'}</span>} loading={loading} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -185,7 +191,7 @@ export function ReportsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[520px] text-sm">
                   <thead className="text-left text-[11px] uppercase tracking-wider text-navy/45">
-                    <tr><th className="pb-2 font-semibold">#</th><th className="pb-2 font-semibold">Vendedor</th><th className="pb-2 text-right font-semibold">Vendas</th><th className="pb-2 text-right font-semibold">Faturamento</th><th className="pb-2 text-right font-semibold">Ticket médio</th><th className="pb-2 text-right font-semibold">% do total</th></tr>
+                    <tr><th className="pb-2 font-semibold">#</th><th className="pb-2 font-semibold">Vendedor</th><th className="pb-2 text-right font-semibold">Vendas</th><th className="pb-2 text-right font-semibold">Faturamento</th><th className="pb-2 text-right font-semibold">Ticket médio</th><th className="pb-2 text-right font-semibold">Comissão</th><th className="pb-2 text-right font-semibold">% do total</th></tr>
                   </thead>
                   <tbody className="divide-y divide-navy/[0.06]">
                     {s.by_seller.map((v, i) => (
@@ -195,6 +201,7 @@ export function ReportsPage() {
                         <td className="py-2.5 text-right text-navy/70">{v.count}</td>
                         <td className="py-2.5 text-right font-medium text-navy">{formatCents(v.total_cents)}</td>
                         <td className="py-2.5 text-right text-navy/70">{formatCents(ticket(v))}</td>
+                        <td className="py-2.5 text-right font-medium text-gold-600">{formatCents(v.commission_cents ?? 0)}</td>
                         <td className="py-2.5 text-right text-navy/55">{s.total_cents ? ((v.total_cents / s.total_cents) * 100).toFixed(1).replace('.', ',') : 0}%</td>
                       </tr>
                     ))}
@@ -210,9 +217,9 @@ export function ReportsPage() {
   );
 }
 
-function Kpi({ label, value, sub, delta, icon: Icon, loading, highlight }: { label: string; value: string; sub?: string; delta: React.ReactNode; icon: typeof Wallet; loading: boolean; highlight?: boolean }) {
+function Kpi({ label, value, sub, delta, icon: Icon, loading, highlight, gold }: { label: string; value: string; sub?: string; delta: React.ReactNode; icon: typeof Wallet; loading: boolean; highlight?: boolean; gold?: boolean }) {
   return (
-    <div className={cn('rounded-xl border p-5 shadow-card', highlight ? 'border-navy bg-navy bg-[radial-gradient(ellipse_at_top_right,_#21165F_0%,_#0D0737_70%)] text-ivory' : 'border-navy/[0.06] bg-white')}>
+    <div className={cn('rounded-xl border p-5 shadow-card', highlight ? 'border-navy bg-navy bg-[radial-gradient(ellipse_at_top_right,_#21165F_0%,_#0D0737_70%)] text-ivory' : gold ? 'border-gold-300 bg-gold-50' : 'border-navy/[0.06] bg-white')}>
       <div className="flex items-center justify-between">
         <p className={cn('text-[11px] font-semibold uppercase tracking-wider', highlight ? 'text-gold-300' : 'text-navy/50')}>{label}</p>
         <Icon className={cn('h-4 w-4', highlight ? 'text-gold-400' : 'text-gold-500')} />

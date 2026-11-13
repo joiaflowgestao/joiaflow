@@ -52,6 +52,7 @@ export async function exportPDF(r: ReportData) {
       ['Quantidade de vendas', String(s.count), String(p.count), delta(s.count, p.count)],
       ['Peças vendidas', String(s.items_count ?? 0), String(p.items_count ?? 0), delta(s.items_count ?? 0, p.items_count ?? 0)],
       ['Ticket médio', formatCents(ticket(s)), formatCents(ticket(p)), delta(ticket(s), ticket(p))],
+      ['Comissão', formatCents(s.commission_cents ?? 0), formatCents(p.commission_cents ?? 0), delta(s.commission_cents ?? 0, p.commission_cents ?? 0)],
     ],
   });
 
@@ -65,8 +66,8 @@ export async function exportPDF(r: ReportData) {
 
   if (r.showSellers) {
     autoTable(doc, { ...base, startY: section('Resultado por vendedor', next()),
-      head: [['Vendedor', 'Vendas', 'Faturamento', 'Ticket médio', '% do total']],
-      body: s.by_seller.map((v) => [v.name, String(v.count), formatCents(v.total_cents), formatCents(ticket(v)), pct(v.total_cents, s.total_cents)]),
+      head: [['Vendedor', 'Vendas', 'Faturamento', 'Ticket médio', 'Comissão', '% do total']],
+      body: s.by_seller.map((v) => [v.name, String(v.count), formatCents(v.total_cents), formatCents(ticket(v)), `${formatCents(v.commission_cents ?? 0)} (${Number(v.commission_percent ?? 30).toLocaleString('pt-BR')}%)`, pct(v.total_cents, s.total_cents)]),
     });
   }
 
@@ -106,6 +107,7 @@ export async function exportExcel(r: ReportData) {
     ['Quantidade de vendas', s.count, p.count],
     ['Peças vendidas', s.items_count ?? 0, p.items_count ?? 0],
     ['Ticket médio (R$)', money(ticket(s)), money(ticket(p))],
+    ['Comissão (R$)', money(s.commission_cents ?? 0), money(p.commission_cents ?? 0)],
   ]);
   resumo['!cols'] = [{ wch: 26 }, { wch: 16 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, resumo, 'Resumo');
@@ -116,7 +118,7 @@ export async function exportExcel(r: ReportData) {
 
   if (r.showSellers) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
-      s.by_seller.map((v) => ({ Vendedor: v.name, Vendas: v.count, 'Faturamento (R$)': money(v.total_cents), 'Ticket médio (R$)': money(ticket(v)) })),
+      s.by_seller.map((v) => ({ Vendedor: v.name, Vendas: v.count, 'Faturamento (R$)': money(v.total_cents), 'Ticket médio (R$)': money(ticket(v)), 'Comissão (%)': Number(v.commission_percent ?? 30), 'Comissão (R$)': money(v.commission_cents ?? 0) })),
     ), 'Por vendedor');
   }
 
