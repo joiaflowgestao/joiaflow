@@ -142,6 +142,46 @@ insert into pg_temp.results select 'À vista pago no ato já nasce quitado',
   (select bool_and(paid_at is not null and paid_by='00000000-0000-0000-0000-0000000000a1') from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='A vista pago');
 reset role;
 
+-- 10) Vários itens na mesma venda (save_sale)
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2');
+with r as (select public.save_sale(null, jsonb_build_object(
+  'customer_name','Multi Itens','sold_at', now(),'installments',2,'first_due_date', current_date,
+  'seller_id','00000000-0000-0000-0000-0000000000a1','organization_id','b0000000-0000-0000-0000-000000000000',
+  'items', jsonb_build_array(
+     jsonb_build_object('category_id',(select id from public.categories where slug='brinco'),'quantity',2,'unit_price_cents',4500),
+     jsonb_build_object('category_id',(select id from public.categories where slug='anel'),'quantity',1,'unit_price_cents',12000)))) as v)
+insert into pg_temp.results select 'save_sale: total = soma dos itens e vendedor forçado',
+  (select (v->>'total_cents')::bigint = 21000 and v->>'seller_id'='00000000-0000-0000-0000-0000000000a2'
+          and v->>'organization_id'='a0000000-0000-0000-0000-000000000000' from r);
+insert into pg_temp.results select 'save_sale: 2 itens gravados e categoria principal = maior valor',
+  (select count(*)=2 and bool_and(i.organization_id=s.organization_id)
+          and max(s.category_id::text) = (select id::text from public.categories where slug='anel')
+     from public.sale_items i join public.sales s on s.id=i.sale_id where s.customer_name='Multi Itens');
+insert into pg_temp.results select 'save_sale: parcelas geradas sobre o total',
+  (select sum(amount_cents)=21000 and count(*)=2 from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='Multi Itens');
+reset role;
+select pg_temp.expect_error('save_sale sem itens é rejeitada', '00000000-0000-0000-0000-0000000000a2',
+  $$select public.save_sale(null, '{"customer_name":"X Y","sold_at":"2026-11-13T10:00:00Z","items":[]}'::jsonb)$$);
+create table pg_temp.ids as select id from public.sales where customer_name='Multi Itens';
+grant select on pg_temp.ids to authenticated;
+select pg_temp.expect_error('Vendedor B1 não edita venda de A via save_sale', '00000000-0000-0000-0000-0000000000b1',
+  $$select public.save_sale((select id from pg_temp.ids), jsonb_build_object('customer_name','Hack','sold_at',now(),'items',jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='anel'),'quantity',1,'unit_price_cents',1))))$$);
+select pg_temp.expect_error('Vendedor não grava item direto', '00000000-0000-0000-0000-0000000000a2',
+  $$insert into public.sale_items(sale_id, organization_id, category_id, quantity, unit_price_cents) select id, organization_id, category_id, 1, 1 from public.sales limit 1$$);
+select pg_temp.expect_error('Valor de venda com vários itens não muda por fora', '00000000-0000-0000-0000-0000000000ad',
+  $$update public.sales set total_cents = 1 where customer_name='Multi Itens'$$);
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+insert into pg_temp.results select 'B1 não vê itens da empresa A', (select count(*)=0 from public.sale_items where organization_id='a0000000-0000-0000-0000-000000000000');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000ad');
+insert into pg_temp.results select 'Relatório por categoria soma itens (2 brincos)',
+  (select exists(select 1 from jsonb_array_elements(public.sales_summary(now()-interval '1 day', now()+interval '1 day')->'by_category') e
+          where e->>'slug'='brinco' and (e->>'count')::int >= 2));
+insert into pg_temp.results select 'Venda antiga/direta ganha 1 item automático',
+  (select bool_and(n=1) from (select count(i.id) n from public.sales s left join public.sale_items i on i.sale_id=s.id where s.customer_name in ('Cliente B1','A vista pago') group by s.id) z);
+reset role;
+
+insert into pg_temp.results select 'Venda de A intacta após tentativa de B1', (select count(*)=0 from public.sales where customer_name='Hack');
 insert into pg_temp.results select 'Auditoria registrou soft_delete', exists(select 1 from public.audit_logs where action='soft_delete');
 
 select (case when ok then 'PASS' else 'FAIL' end) || '  ' || name from pg_temp.results;

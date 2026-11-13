@@ -1,5 +1,5 @@
-import { CalendarDays, Clock, User } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
+import { CalendarDays, Clock, Minus, Plus, Trash2, User } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { CategoryIcon } from '@/components/ui/CategoryIcon';
@@ -11,9 +11,12 @@ import { cn } from '@/lib/cn';
 import { addMonthsISO, dueSchedule, formatDateOnly, fromLocalInputs, toLocalInputs } from '@/lib/datetime';
 import { describeInstallments, formatCents, maskCentsInput, splitInstallments } from '@/lib/money';
 import { friendlyError, supabase } from '@/lib/supabase';
-import type { Sale } from '@/types/database';
+import type { Sale, SaleItem } from '@/types/database';
 
 const MAX_CENTS = 100_000_000; // R$ 1.000.000,00
+
+interface ItemRow { key: number; category_id: string; quantity: number; unit_cents: number; unit_text: string }
+let rowSeq = 0;
 const INSTALLMENT_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar venda' }: {
@@ -30,9 +33,31 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
   const [date, setDate] = useState(start.date);
   const [time, setTime] = useState(start.time);
   const [customer, setCustomer] = useState(initial?.customer_name ?? '');
-  const [categoryId, setCategoryId] = useState(initial?.category_id ?? '');
-  const [cents, setCents] = useState(initial?.total_cents ?? 0);
-  const [amountText, setAmountText] = useState(initial ? formatCents(initial.total_cents, false) : '');
+  const [items, setItems] = useState<ItemRow[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(Boolean(initial));
+  const [focusKey, setFocusKey] = useState<number | null>(null);
+  const cents = items.reduce((a, i) => a + i.quantity * i.unit_cents, 0);
+
+  // Edição: carrega os itens da venda
+  useEffect(() => {
+    if (!initial) return;
+    supabase.from('sale_items').select('*').eq('sale_id', initial.id).order('position').then(({ data }) => {
+      const rows = (data ?? []) as SaleItem[];
+      setItems(rows.length
+        ? rows.map((r) => ({ key: ++rowSeq, category_id: r.category_id, quantity: r.quantity, unit_cents: r.unit_price_cents, unit_text: formatCents(r.unit_price_cents, false) }))
+        : [{ key: ++rowSeq, category_id: initial.category_id, quantity: 1, unit_cents: initial.total_cents, unit_text: formatCents(initial.total_cents, false) }]);
+      setItemsLoading(false);
+    });
+  }, [initial]);
+
+  function addItem(categoryId: string) {
+    const key = ++rowSeq;
+    setItems((l) => [...l, { key, category_id: categoryId, quantity: 1, unit_cents: 0, unit_text: '' }]);
+    setFocusKey(key);
+    setErrors((e) => ({ ...e, items: '' }));
+  }
+  const updateItem = (key: number, patch: Partial<ItemRow>) => setItems((l) => l.map((i) => (i.key === key ? { ...i, ...patch } : i)));
+  const removeItem = (key: number) => setItems((l) => l.filter((i) => i.key !== key));
   const [installments, setInstallments] = useState(initial?.installments ?? 1);
   const [firstDue, setFirstDue] = useState(initial?.first_due_date ?? start.date);
   const [dueTouched, setDueTouched] = useState(Boolean(initial));
@@ -66,9 +91,9 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
     const name = customer.trim().replace(/\s+/g, ' ');
     if (name.length < 2) e.customer = 'Informe o nome do cliente.';
     else if (name.length > 120) e.customer = 'Nome muito longo.';
-    if (!categoryId) e.category = 'Escolha a categoria.';
-    if (cents <= 0) e.amount = 'Informe o valor da venda.';
-    else if (cents > MAX_CENTS) e.amount = 'Valor acima do limite permitido.';
+    if (items.length === 0) e.items = 'Adicione pelo menos um item tocando na categoria.';
+    else if (items.some((i) => i.unit_cents <= 0)) e.items = 'Informe o valor de cada item.';
+    else if (cents > MAX_CENTS) e.items = 'Valor acima do limite permitido.';
     if (!date || !time) e.date = 'Informe data e horário.';
     else if (new Date(fromLocalInputs(date, time)).getTime() > Date.now() + 5 * 60_000) e.date = 'A data da venda não pode estar no futuro.';
     if (!firstDue) e.due = 'Informe o vencimento da 1ª parcela.';
@@ -87,26 +112,25 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
 
     const payload = {
       customer_name: customer.trim().replace(/\s+/g, ' '),
-      category_id: categoryId,
-      total_cents: cents,
       installments,
       sold_at: fromLocalInputs(date, time),
       first_due_date: firstDue,
       upfront_paid: upfrontPaid,
       seller_id: seller.id,
       organization_id: seller.organization_id,
+      items: items.map((i) => ({ category_id: i.category_id, quantity: i.quantity, unit_price_cents: i.unit_cents })),
     };
     setSaving(true);
-    const q = initial
-      ? supabase.from('sales').update(payload).eq('id', initial.id).select().single()
-      : supabase.from('sales').insert(payload).select().single();
-    const { data, error } = await q;
+    // Venda + itens gravados juntos numa única transação no banco
+    const { data, error } = await supabase.rpc('save_sale', { p_sale_id: initial?.id ?? null, p_data: payload });
     setSaving(false);
     if (error) return setFormError(friendlyError(error));
     onSaved(data as Sale);
   }
 
-  if (categories.loading || profiles.loading) {
+  const catById = useMemo(() => new Map(categories.data.map((c) => [c.id, c])), [categories.data]);
+
+  if (categories.loading || profiles.loading || itemsLoading) {
     return <div className="flex justify-center py-16 text-gold-500"><Spinner className="h-7 w-7" /></div>;
   }
 
@@ -126,36 +150,71 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
         leading={<User className="h-4 w-4" />} placeholder="Nome do cliente" autoComplete="off" maxLength={120} autoFocus={!initial} />
 
       <div>
-        <span className="field-label">Categoria</span>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6" role="radiogroup" aria-label="Categoria">
+        <span className="field-label">{items.length ? 'Adicionar mais itens' : 'Itens da venda'}</span>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6" aria-label="Adicionar item por categoria">
           {categories.data.map((c) => {
-            const active = c.id === categoryId;
+            const qty = items.filter((i) => i.category_id === c.id).reduce((a, i) => a + i.quantity, 0);
             return (
-              <button key={c.id} type="button" role="radio" aria-checked={active} onClick={() => setCategoryId(c.id)}
+              <button key={c.id} type="button" onClick={() => addItem(c.id)}
                 className={cn(
-                  'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-medium transition',
-                  active ? 'border-gold-400 bg-navy text-ivory shadow-gold' : 'border-navy/10 bg-white text-navy/70 hover:border-gold-300 hover:bg-gold-50',
+                  'relative flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-xs font-medium transition',
+                  qty ? 'border-gold-400 bg-navy text-ivory' : 'border-navy/10 bg-white text-navy/70 hover:border-gold-300 hover:bg-gold-50',
                 )}>
-                <CategoryIcon slug={c.slug} className={cn('h-7 w-7', active ? 'text-gold-400' : 'text-navy/60')} />
+                {qty > 0 && <span className="absolute right-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-gold-400 px-1 text-[11px] font-bold text-navy">{qty}</span>}
+                <CategoryIcon slug={c.slug} className={cn('h-7 w-7', qty ? 'text-gold-400' : 'text-navy/60')} />
                 {c.name}
+                <Plus className={cn('absolute bottom-1.5 right-1.5 h-3 w-3', qty ? 'text-gold-300' : 'text-navy/30')} />
               </button>
             );
           })}
         </div>
-        {errors.category && <p className="mt-1.5 text-sm text-red-700">{errors.category}</p>}
+        {items.length === 0 && !errors.items && <p className="mt-1.5 text-xs text-navy/50">Toque numa categoria para adicionar um item. Pode adicionar quantos quiser.</p>}
+
+        {items.length > 0 && (
+          <ul className="mt-3 divide-y divide-navy/[0.06] rounded-xl border border-navy/10 bg-white">
+            {items.map((it) => {
+              const cat = catById.get(it.category_id);
+              return (
+                <li key={it.key} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:flex-nowrap">
+                  <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-navy">
+                    <CategoryIcon slug={cat?.slug ?? ''} className="h-5 w-5 shrink-0 text-gold-500" />
+                    <span className="truncate">{cat?.name}</span>
+                  </span>
+                  <div className="flex items-center rounded-lg border border-navy/15" aria-label="Quantidade">
+                    <button type="button" className="p-2 text-navy/60 hover:text-navy disabled:opacity-30" disabled={it.quantity <= 1}
+                      onClick={() => updateItem(it.key, { quantity: it.quantity - 1 })} aria-label="Diminuir"><Minus className="h-3.5 w-3.5" /></button>
+                    <span className="w-7 text-center text-sm font-semibold text-navy">{it.quantity}</span>
+                    <button type="button" className="p-2 text-navy/60 hover:text-navy disabled:opacity-30" disabled={it.quantity >= 999}
+                      onClick={() => updateItem(it.key, { quantity: it.quantity + 1 })} aria-label="Aumentar"><Plus className="h-3.5 w-3.5" /></button>
+                  </div>
+                  <div className="relative w-32">
+                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-semibold text-navy/45">R$</span>
+                    <input inputMode="numeric" placeholder="0,00" value={it.unit_text} autoFocus={focusKey === it.key}
+                      aria-label={`Valor unitário de ${cat?.name ?? 'item'}`}
+                      onChange={(e) => { const m = maskCentsInput(e.target.value); updateItem(it.key, { unit_cents: m.cents, unit_text: m.display }); }}
+                      className={cn('field-input py-2 pl-9 text-right font-semibold', it.unit_cents <= 0 && errors.items && 'border-red-600')} />
+                  </div>
+                  <span className="w-24 text-right text-sm font-semibold text-navy">{formatCents(it.quantity * it.unit_cents)}</span>
+                  <button type="button" onClick={() => removeItem(it.key)} className="rounded-lg p-2 text-navy/40 hover:bg-red-50 hover:text-red-700" aria-label="Remover item">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </li>
+              );
+            })}
+            <li className="flex items-center justify-between px-3 py-3">
+              <span className="text-sm text-navy/60">{items.reduce((a, i) => a + i.quantity, 0)} peça(s)</span>
+              <span className="text-lg font-semibold text-navy">Total {formatCents(cents)}</span>
+            </li>
+          </ul>
+        )}
+        {errors.items && <p className="mt-1.5 text-sm text-red-700">{errors.items}</p>}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Input label="Valor total" inputMode="numeric" value={amountText} error={errors.amount}
-          leading={<span className="text-sm font-semibold">R$</span>} placeholder="0,00"
-          onChange={(e) => { const m = maskCentsInput(e.target.value); setCents(m.cents); setAmountText(m.display); }}
-          className="text-lg font-semibold" />
-        <Select label="Parcelas" value={installments} onChange={(e) => changeInstallments(Number(e.target.value))}>
-          {INSTALLMENT_OPTIONS.map((n) => (
-            <option key={n} value={n}>{n === 1 ? 'À vista (1x)' : `${n}x`}{cents > 0 ? ` · ${formatCents(splitInstallments(cents, n).baseCents)}` : ''}</option>
-          ))}
-        </Select>
-      </div>
+      <Select label="Parcelas" value={installments} onChange={(e) => changeInstallments(Number(e.target.value))}>
+        {INSTALLMENT_OPTIONS.map((n) => (
+          <option key={n} value={n}>{n === 1 ? 'À vista (1x)' : `${n}x`}{cents > 0 ? ` · ${formatCents(splitInstallments(cents, n).baseCents)}` : ''}</option>
+        ))}
+      </Select>
 
       <div className="grid grid-cols-2 gap-4">
         <Input label="Data da venda" type="date" value={date} onChange={(e) => { setDate(e.target.value); suggestDue(installments, e.target.value); }} error={errors.date} leading={<CalendarDays className="h-4 w-4" />} />

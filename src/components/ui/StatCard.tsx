@@ -12,7 +12,7 @@ export function StatCard({ label, value, hint, icon: Icon, highlight }: { label:
         <p className={cn('text-[11px] font-semibold uppercase tracking-wider', highlight ? 'text-gold-300' : 'text-navy/50')}>{label}</p>
         <Icon className={cn('h-4 w-4', highlight ? 'text-gold-400' : 'text-gold-500')} />
       </div>
-      <p className={cn('mt-2 truncate font-display text-2xl font-semibold sm:text-3xl', highlight ? 'text-ivory' : 'text-navy')}>{value}</p>
+      <p className={cn('metric mt-2 truncate text-[22px] sm:text-[26px]', highlight ? 'text-ivory' : 'text-navy')}>{value}</p>
       {hint && <p className={cn('mt-1 truncate text-xs', highlight ? 'text-ivory/60' : 'text-navy/50')}>{hint}</p>}
     </div>
   );

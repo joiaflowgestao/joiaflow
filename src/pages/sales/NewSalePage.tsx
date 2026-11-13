@@ -1,5 +1,5 @@
 import { CheckCircle2, History, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SaleForm } from '@/components/sales/SaleForm';
 import { Button } from '@/components/ui/Button';
@@ -8,12 +8,20 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime } from '@/lib/datetime';
 import { describeInstallments, formatCents } from '@/lib/money';
-import type { Sale } from '@/types/database';
+import { supabase } from '@/lib/supabase';
+import type { Sale, SaleItem } from '@/types/database';
 
 export function NewSalePage() {
   const toast = useToast();
   const [saved, setSaved] = useState<Sale | null>(null);
   const [formKey, setFormKey] = useState(0);
+  const [items, setItems] = useState<SaleItem[]>([]);
+
+  useEffect(() => {
+    if (!saved) return setItems([]);
+    supabase.from('sale_items').select('*, category:categories(name, slug)').eq('sale_id', saved.id).order('position')
+      .then(({ data }) => setItems((data ?? []) as SaleItem[]));
+  }, [saved]);
 
   function onSaved(sale: Sale) {
     setSaved(sale);
@@ -29,7 +37,8 @@ export function NewSalePage() {
             <div className="flex flex-col items-center py-6 text-center">
               <div className="mb-4 rounded-full bg-gold-50 p-4"><CheckCircle2 className="h-10 w-10 text-gold-500" /></div>
               <p className="font-display text-3xl text-navy">Venda registrada!</p>
-              <p className="mt-3 text-navy/70"><strong className="text-navy">{saved.customer_name}</strong> · {formatCents(saved.total_cents)}</p>
+              <p className="mt-3 text-navy/70"><strong className="text-navy">{saved.customer_name}</strong> · <span className="metric text-navy">{formatCents(saved.total_cents)}</span></p>
+              {items.length > 0 && <p className="mt-1 text-sm text-navy/70">{items.map((i) => `${i.quantity}x ${i.category?.name}`).join(' · ')}</p>}
               <p className="text-sm text-navy/55">{describeInstallments(saved.total_cents, saved.installments)} · {formatDateTime(saved.sold_at)}</p>
               <div className="mt-8 flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <Button size="lg" onClick={() => { setSaved(null); setFormKey((k) => k + 1); }}><Plus className="h-4 w-4" /> Registrar outra venda</Button>

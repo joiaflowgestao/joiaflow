@@ -6,10 +6,15 @@
   html { -webkit-tap-highlight-color: transparent; }
   body { @apply font-sans bg-ivory text-navy; }
   h1, h2, h3 { @apply font-display tracking-tight; }
+  /* Números sempre alinhados e da mesma largura (sem "números antigos" da fonte de títulos) */
+  .font-display, h1, h2, h3 { font-variant-numeric: lining-nums; }
+  body { font-variant-numeric: tabular-nums; }
   :focus-visible { @apply outline-none ring-2 ring-gold-400 ring-offset-2 ring-offset-ivory; }
 }
 
 @layer components {
+  /* Valores e indicadores: fonte moderna, bem legível */
+  .metric { @apply font-sans font-bold tracking-tight; font-variant-numeric: lining-nums tabular-nums; }
   .gold-rule { @apply h-px bg-gradient-to-r from-transparent via-gold-400 to-transparent; }
   .field-label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-navy/60; }
   .field-input {

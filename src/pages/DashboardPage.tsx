@@ -82,12 +82,12 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
         <div className="col-span-2 lg:col-span-1">
-          <StatCard highlight label="Total do mês" icon={Wallet} value={monthData.loading ? '…' : formatCents(m.total_cents)} hint={`${m.count} venda${m.count === 1 ? '' : 's'}`} />
+          <StatCard highlight label="Total do mês" icon={Wallet} value={monthData.loading ? '…' : formatCents(m.total_cents)} hint={`${m.count} venda${m.count === 1 ? '' : 's'} · ${m.items_count ?? 0} peça${(m.items_count ?? 0) === 1 ? '' : 's'}`} />
         </div>
         <StatCard label="Vendas no mês" icon={Receipt} value={monthData.loading ? '…' : m.count} />
         <StatCard label="Ticket médio" icon={TrendingUp} value={monthData.loading ? '…' : formatCents(avg)} />
         <StatCard label="Hoje" icon={CalendarDays} value={dayData.loading ? '…' : formatCents(dayData.data.total_cents)} hint={`${dayData.data.count} venda${dayData.data.count === 1 ? '' : 's'}`} />
-        <StatCard label="Mais vendida" icon={Crown} value={topCat ? topCat.name : '—'} hint={topCat ? `${topCat.count} venda${topCat.count === 1 ? '' : 's'} · ${formatCents(topCat.total_cents)}` : 'Sem vendas no mês'} />
+        <StatCard label="Mais vendida" icon={Crown} value={topCat ? topCat.name : '—'} hint={topCat ? `${topCat.count} peça${topCat.count === 1 ? '' : 's'} · ${formatCents(topCat.total_cents)}` : 'Sem vendas no mês'} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">

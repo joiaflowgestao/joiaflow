@@ -2,7 +2,7 @@
 // As bibliotecas são carregadas sob demanda para não pesar o app.
 import { formatDate, formatTime } from '@/lib/datetime';
 import { formatCents } from '@/lib/money';
-import { paymentSummary } from '@/lib/salesQuery';
+import { itemsLabel, paymentSummary } from '@/lib/salesQuery';
 import type { SaleWithRelations, SalesSummary } from '@/types/database';
 
 export interface ReportData {
@@ -50,6 +50,7 @@ export async function exportPDF(r: ReportData) {
     body: [
       ['Faturamento', formatCents(s.total_cents), formatCents(p.total_cents), delta(s.total_cents, p.total_cents)],
       ['Quantidade de vendas', String(s.count), String(p.count), delta(s.count, p.count)],
+      ['Peças vendidas', String(s.items_count ?? 0), String(p.items_count ?? 0), delta(s.items_count ?? 0, p.items_count ?? 0)],
       ['Ticket médio', formatCents(ticket(s)), formatCents(ticket(p)), delta(ticket(s), ticket(p))],
     ],
   });
@@ -58,7 +59,7 @@ export async function exportPDF(r: ReportData) {
   const section = (title: string, y: number) => { doc.setTextColor(...navy); doc.setFont('times', 'bold'); doc.setFontSize(13); doc.text(title, 40, y); return y + 8; };
 
   autoTable(doc, { ...base, startY: section('Vendas por categoria', next()),
-    head: [['Categoria', 'Vendas', 'Faturamento', '% do total']],
+    head: [['Categoria', 'Peças', 'Faturamento', '% do total']],
     body: s.by_category.map((c) => [c.name, String(c.count), formatCents(c.total_cents), pct(c.total_cents, s.total_cents)]),
   });
 
@@ -76,10 +77,10 @@ export async function exportPDF(r: ReportData) {
 
   autoTable(doc, { ...base, startY: section('Vendas do período', next()),
     styles: { fontSize: 8, cellPadding: 4 },
-    head: [['Data', 'Hora', 'Cliente', 'Categoria', 'Valor', 'Parcelas', ...(r.showSellers ? ['Vendedor'] : []), 'Pagas']],
+    head: [['Data', 'Hora', 'Cliente', 'Itens', 'Valor', 'Parcelas', ...(r.showSellers ? ['Vendedor'] : []), 'Pagas']],
     body: r.sales.map((x) => {
       const ps = paymentSummary(x);
-      return [formatDate(x.sold_at), formatTime(x.sold_at), x.customer_name, x.category?.name ?? '', formatCents(x.total_cents),
+      return [formatDate(x.sold_at), formatTime(x.sold_at), x.customer_name, itemsLabel(x), formatCents(x.total_cents),
         x.installments === 1 ? 'À vista' : `${x.installments}x`, ...(r.showSellers ? [x.seller?.full_name ?? ''] : []), `${ps.paid}/${ps.total}`];
     }),
   });
@@ -103,13 +104,14 @@ export async function exportExcel(r: ReportData) {
     ['Indicador', 'Período', 'Mês anterior'],
     ['Faturamento (R$)', money(s.total_cents), money(p.total_cents)],
     ['Quantidade de vendas', s.count, p.count],
+    ['Peças vendidas', s.items_count ?? 0, p.items_count ?? 0],
     ['Ticket médio (R$)', money(ticket(s)), money(ticket(p))],
   ]);
   resumo['!cols'] = [{ wch: 26 }, { wch: 16 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, resumo, 'Resumo');
 
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
-    s.by_category.map((c) => ({ Categoria: c.name, Vendas: c.count, 'Faturamento (R$)': money(c.total_cents) })),
+    s.by_category.map((c) => ({ Categoria: c.name, Peças: c.count, 'Faturamento (R$)': money(c.total_cents) })),
   ), 'Por categoria');
 
   if (r.showSellers) {
@@ -125,13 +127,13 @@ export async function exportExcel(r: ReportData) {
   const vendas = XLSX.utils.json_to_sheet(r.sales.map((x) => {
     const ps = paymentSummary(x);
     return {
-      Data: formatDate(x.sold_at), Hora: formatTime(x.sold_at), Cliente: x.customer_name, Categoria: x.category?.name ?? '',
-      'Valor (R$)': money(x.total_cents), Parcelas: x.installments, 'Valor da parcela (R$)': money(x.installment_cents),
+      Data: formatDate(x.sold_at), Hora: formatTime(x.sold_at), Cliente: x.customer_name, Itens: itemsLabel(x),
+      'Peças': (x.items ?? []).reduce((a, i) => a + i.quantity, 0) || 1, 'Valor (R$)': money(x.total_cents), Parcelas: x.installments, 'Valor da parcela (R$)': money(x.installment_cents),
       ...(r.showSellers ? { Vendedor: x.seller?.full_name ?? '', Empresa: x.organization?.name ?? '' } : {}),
       'Parcelas pagas': `${ps.paid}/${ps.total}`,
     };
   }));
-  vendas['!cols'] = [{ wch: 11 }, { wch: 7 }, { wch: 30 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 18 }, { wch: 24 }, { wch: 20 }, { wch: 14 }];
+  vendas['!cols'] = [{ wch: 11 }, { wch: 7 }, { wch: 30 }, { wch: 30 }, { wch: 7 }, { wch: 12 }, { wch: 9 }, { wch: 18 }, { wch: 24 }, { wch: 20 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, vendas, 'Vendas');
 
   XLSX.writeFile(wb, fileName(r, 'xlsx'));

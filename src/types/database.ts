@@ -79,6 +79,17 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   seller: 'Vendedor',
 };
 
+export interface SaleItem {
+  id: string;
+  sale_id: string;
+  category_id: string;
+  quantity: number;
+  unit_price_cents: number;
+  line_total_cents: number;
+  position: number;
+  category?: Pick<Category, 'name' | 'slug'> | null;
+}
+
 export interface Installment {
   id: string;
   sale_id: string;
@@ -96,6 +107,7 @@ export interface SaleWithRelations extends Sale {
   seller: Pick<Profile, 'full_name'> | null;
   organization: Pick<Organization, 'name'> | null;
   installment_rows?: Pick<Installment, 'id' | 'paid_at' | 'due_date'>[];
+  items?: SaleItem[];
 }
 
 /** Parcela com dados da venda (para alertas de vencimento). */
@@ -113,6 +125,7 @@ export interface SummaryItem { id: string; name: string; slug?: string; total_ce
 export interface SalesSummary {
   total_cents: number;
   count: number;
+  items_count?: number;
   by_category: SummaryItem[];
   by_seller: SummaryItem[];
   by_day: { day: string; total_cents: number; count: number }[];

@@ -16,7 +16,7 @@ import { useCategories, useProfiles } from '@/hooks/useData';
 import { cn } from '@/lib/cn';
 import { currentYearMonth, formatDate, formatTime, MONTHS_PT, todayISO } from '@/lib/datetime';
 import { describeInstallments, formatCents } from '@/lib/money';
-import { buildSalesQuery, paymentSummary, type SalesFilters } from '@/lib/salesQuery';
+import { buildSalesQuery, itemsLabel, paymentSummary, saleItems, type SalesFilters } from '@/lib/salesQuery';
 import { friendlyError, supabase } from '@/lib/supabase';
 import type { SaleWithRelations } from '@/types/database';
 
@@ -152,7 +152,7 @@ export function HistoryPage() {
                 <tr>
                   <th className="px-5 py-3 font-semibold">Data</th>
                   <th className="px-3 py-3 font-semibold">Cliente</th>
-                  <th className="px-3 py-3 font-semibold">Categoria</th>
+                  <th className="px-3 py-3 font-semibold">Itens</th>
                   <th className="px-3 py-3 text-right font-semibold">Valor</th>
                   <th className="px-3 py-3 font-semibold">Parcelas</th>
                   {isAdmin && <th className="px-3 py-3 font-semibold">Vendedor</th>}
@@ -165,7 +165,7 @@ export function HistoryPage() {
                   <tr key={s.id} className="cursor-pointer hover:bg-gold-50/50" onClick={() => setDetail(s)}>
                     <td className="whitespace-nowrap px-5 py-3 text-navy">{formatDate(s.sold_at)} <span className="text-navy/45">{formatTime(s.sold_at)}</span></td>
                     <td className="max-w-[200px] truncate px-3 py-3 font-medium text-navy">{s.customer_name}</td>
-                    <td className="px-3 py-3"><span className="inline-flex items-center gap-1.5 text-navy/75"><CategoryIcon slug={s.category?.slug ?? ''} className="h-4 w-4 text-gold-500" />{s.category?.name}</span></td>
+                    <td className="max-w-[220px] px-3 py-3"><span className="flex items-center gap-1.5 text-navy/75" title={itemsLabel(s)}><CategoryIcon slug={s.category?.slug ?? ''} className="h-4 w-4 shrink-0 text-gold-500" /><span className="truncate">{itemsLabel(s)}</span></span></td>
                     <td className="whitespace-nowrap px-3 py-3 text-right font-semibold text-navy">{formatCents(s.total_cents)}</td>
                     <td className="whitespace-nowrap px-3 py-3 text-navy/70">{s.installments === 1 ? 'À vista' : `${s.installments}x`}</td>
                     {isAdmin && <td className="max-w-[160px] truncate px-3 py-3 text-navy/70">{s.seller?.full_name}</td>}
@@ -189,7 +189,7 @@ export function HistoryPage() {
                     <p className="truncate font-medium text-navy">{s.customer_name}</p>
                     <p className="mt-0.5 flex items-center gap-1.5 text-xs text-navy/55">
                       <CategoryIcon slug={s.category?.slug ?? ''} className="h-3.5 w-3.5 text-gold-500" />
-                      {s.category?.name} · {formatDate(s.sold_at)} {formatTime(s.sold_at)}
+                      <span className="truncate">{itemsLabel(s)}</span> · {formatDate(s.sold_at)} {formatTime(s.sold_at)}
                     </p>
                     {isAdmin && <p className="mt-0.5 truncate text-xs text-navy/45">{s.seller?.full_name}</p>}
                   </div>
@@ -219,12 +219,24 @@ export function HistoryPage() {
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               <Info label="Cliente" value={detail.customer_name} />
-              <Info label="Categoria" value={detail.category?.name} />
               <Info label="Data" value={`${formatDate(detail.sold_at)} às ${formatTime(detail.sold_at)}`} />
               <Info label="Valor" value={formatCents(detail.total_cents)} />
               <Info label="Pagamento" value={describeInstallments(detail.total_cents, detail.installments)} />
               <Info label="Vendedor" value={detail.seller?.full_name} />
               {isAdmin && detail.organization && <Info label="Empresa" value={detail.organization.name} />}
+            </div>
+            <div>
+              <p className="field-label">Itens</p>
+              <ul className="divide-y divide-navy/[0.06] rounded-xl border border-navy/[0.08]">
+                {saleItems(detail).map((it) => (
+                  <li key={it.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                    <CategoryIcon slug={it.category?.slug ?? ''} className="h-5 w-5 text-gold-500" />
+                    <span className="flex-1 text-navy">{it.quantity}x {it.category?.name}</span>
+                    <span className="text-navy/55">{it.quantity > 1 ? `${formatCents(it.unit_price_cents)} cada` : ''}</span>
+                    <span className="w-24 text-right font-medium text-navy">{formatCents(it.line_total_cents)}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
             <div>
               <p className="field-label">Parcelas</p>

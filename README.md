@@ -47,6 +47,7 @@ No **SQL Editor**, execute **em ordem** os arquivos de `supabase/migrations/`:
 3. `20261113000003_seed_categories.sql`
 4. `20261113000004_profiles_contact_reports.sql`
 5. `20261113000005_installments.sql`
+6. `20261113000006_sale_items.sql`
 
 (Ou, com o Supabase CLI: `npx supabase link --project-ref SEU_REF && npx supabase db push`.)
 
@@ -85,7 +86,7 @@ npm run dev                  # http://localhost:5173/joiaflow/
 | `npm run dev` | Servidor de desenvolvimento |
 | `npm run build` | Typecheck + build de produção |
 | `npm test` | Testes unitários (dinheiro, parcelas, fuso horário) |
-| `./supabase/tests/run.sh` | 38 testes de segurança/parcelas num PostgreSQL local descartável |
+| `./supabase/tests/run.sh` | 49 testes de segurança/parcelas num PostgreSQL local descartável |
 
 ## Segurança — resumo
 - Sem cadastro público; usuários só pela Edge Function `admin-users`.

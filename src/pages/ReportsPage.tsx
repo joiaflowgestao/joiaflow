@@ -127,7 +127,7 @@ export function ReportsPage() {
 
       <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
         <Kpi label="Faturamento" icon={Wallet} value={formatCents(s.total_cents)} delta={<Delta cur={s.total_cents} prev={before.data.total_cents} />} loading={loading} highlight />
-        <Kpi label="Quantidade de vendas" icon={Receipt} value={String(s.count)} delta={<Delta cur={s.count} prev={before.data.count} />} loading={loading} />
+        <Kpi label="Quantidade de vendas" icon={Receipt} value={`${s.count}`} sub={`${s.items_count ?? 0} peças`} delta={<Delta cur={s.count} prev={before.data.count} />} loading={loading} />
         <Kpi label="Ticket médio" icon={TrendingUp} value={formatCents(ticket(s))} delta={<Delta cur={ticket(s)} prev={ticket(before.data)} />} loading={loading} />
       </div>
 
@@ -159,7 +159,7 @@ export function ReportsPage() {
             {loading ? <Loading /> : s.by_category.length === 0 ? <EmptyRow /> : (
               <table className="w-full text-sm">
                 <thead className="text-left text-[11px] uppercase tracking-wider text-navy/45">
-                  <tr><th className="pb-2 font-semibold">Categoria</th><th className="pb-2 text-right font-semibold">Vendas</th><th className="pb-2 text-right font-semibold">Faturamento</th><th className="pb-2 text-right font-semibold">%</th></tr>
+                  <tr><th className="pb-2 font-semibold">Categoria</th><th className="pb-2 text-right font-semibold">Peças</th><th className="pb-2 text-right font-semibold">Faturamento</th><th className="pb-2 text-right font-semibold">%</th></tr>
                 </thead>
                 <tbody className="divide-y divide-navy/[0.06]">
                   {s.by_category.map((c) => (
@@ -190,7 +190,7 @@ export function ReportsPage() {
                   <tbody className="divide-y divide-navy/[0.06]">
                     {s.by_seller.map((v, i) => (
                       <tr key={v.id}>
-                        <td className="py-2.5 font-display text-lg text-gold-500">{i + 1}</td>
+                        <td className="metric py-2.5 text-gold-500">{i + 1}</td>
                         <td className="py-2.5 font-medium text-navy">{v.name}</td>
                         <td className="py-2.5 text-right text-navy/70">{v.count}</td>
                         <td className="py-2.5 text-right font-medium text-navy">{formatCents(v.total_cents)}</td>
@@ -210,14 +210,14 @@ export function ReportsPage() {
   );
 }
 
-function Kpi({ label, value, delta, icon: Icon, loading, highlight }: { label: string; value: string; delta: React.ReactNode; icon: typeof Wallet; loading: boolean; highlight?: boolean }) {
+function Kpi({ label, value, sub, delta, icon: Icon, loading, highlight }: { label: string; value: string; sub?: string; delta: React.ReactNode; icon: typeof Wallet; loading: boolean; highlight?: boolean }) {
   return (
     <div className={cn('rounded-xl border p-5 shadow-card', highlight ? 'border-navy bg-navy bg-[radial-gradient(ellipse_at_top_right,_#21165F_0%,_#0D0737_70%)] text-ivory' : 'border-navy/[0.06] bg-white')}>
       <div className="flex items-center justify-between">
         <p className={cn('text-[11px] font-semibold uppercase tracking-wider', highlight ? 'text-gold-300' : 'text-navy/50')}>{label}</p>
         <Icon className={cn('h-4 w-4', highlight ? 'text-gold-400' : 'text-gold-500')} />
       </div>
-      <p className={cn('mt-2 font-display text-3xl font-semibold', highlight ? 'text-ivory' : 'text-navy')}>{loading ? '…' : value}</p>
+      <p className={cn('metric mt-2 text-[26px]', highlight ? 'text-ivory' : 'text-navy')}>{loading ? '…' : value}{sub && !loading && <span className="ml-2 font-sans text-sm font-normal text-navy/50">{sub}</span>}</p>
       <div className={cn('mt-1 text-xs', highlight && '[&_*]:!text-ivory/80')}>{!loading && delta}</div>
     </div>
   );
