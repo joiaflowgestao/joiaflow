@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 interface FieldWrapProps { label?: string; error?: string | null; hint?: ReactNode; id: string; children: ReactNode }
 function FieldWrap({ label, error, hint, id, children }: FieldWrapProps) {
   return (
-    <div>
+    <div className="min-w-0">
       {label && <label htmlFor={id} className="field-label">{label}</label>}
       {children}
       {error ? (
@@ -24,7 +24,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({ label, error, h
   const fid = id ?? auto;
   return (
     <FieldWrap label={label} error={error} hint={hint} id={fid}>
-      <div className="relative">
+      <div className="relative min-w-0">
         {leading && <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-navy/45">{leading}</span>}
         <input
           ref={ref}

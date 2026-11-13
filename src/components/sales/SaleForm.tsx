@@ -151,7 +151,7 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
 
       <div>
         <span className="field-label">{items.length ? 'Adicionar mais itens' : 'Itens da venda'}</span>
-        <div className="grid grid-cols-4 gap-2 sm:grid-cols-7" aria-label="Adicionar item por categoria">
+        <div className="grid grid-cols-4 gap-2" aria-label="Adicionar item por categoria">
           {categories.data.map((c) => {
             const qty = items.filter((i) => i.category_id === c.id).reduce((a, i) => a + i.quantity, 0);
             return (
@@ -215,7 +215,7 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
         ))}
       </Select>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <Input label="Data da venda" type="date" value={date} onChange={(e) => { setDate(e.target.value); suggestDue(installments, e.target.value); }} error={errors.date} leading={<CalendarDays className="h-4 w-4" />} />
         <Input label="Horário" type="time" value={time} onChange={(e) => setTime(e.target.value)} leading={<Clock className="h-4 w-4" />} />
       </div>
