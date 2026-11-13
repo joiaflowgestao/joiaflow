@@ -11,7 +11,9 @@ export const supabase = createClient(url || 'http://localhost', anonKey || 'miss
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    flowType: 'pkce',
+    // 'implicit': o link de recuperação de senha funciona mesmo se o e-mail
+    // for aberto em outro navegador (ex.: app instalado na tela inicial do iPhone).
+    flowType: 'implicit',
   },
 });
 

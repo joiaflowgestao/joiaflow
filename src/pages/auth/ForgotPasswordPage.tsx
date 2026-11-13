@@ -30,7 +30,7 @@ export function ForgotPasswordPage() {
     <AuthShell title="Recuperar acesso" subtitle="Enviaremos um link seguro para você criar uma nova senha.">
       {sent ? (
         <div className="space-y-5">
-          <Alert kind="success">Se este e-mail estiver cadastrado, você receberá o link em instantes. Abra-o <strong>neste mesmo navegador</strong>.</Alert>
+          <Alert kind="success">Se este e-mail estiver cadastrado, você receberá o link em instantes. Confira também a caixa de spam.</Alert>
           <Link to="/login" className="block text-center text-sm text-navy/60 hover:text-navy">Voltar ao login</Link>
         </div>
       ) : (
