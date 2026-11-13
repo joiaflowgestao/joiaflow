@@ -1,0 +1,9 @@
+# Configuração mínima para o Supabase CLI
+project_id = "joiaflow"
+
+[auth]
+# Sem cadastro público: somente o administrador cria usuários (Edge Function)
+enable_signup = false
+
+[functions.admin-users]
+verify_jwt = true

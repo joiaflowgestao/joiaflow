@@ -1,0 +1,98 @@
+-- Dados de TESTE (somente neste banco temporário)
+insert into public.organizations (id, name, slug) values
+ ('a0000000-0000-0000-0000-000000000000','Empresa A','empresa-a'),
+ ('b0000000-0000-0000-0000-000000000000','Empresa B','empresa-b');
+insert into auth.users values
+ ('00000000-0000-0000-0000-0000000000ad','admin@x'),('00000000-0000-0000-0000-0000000000a1','a1@x'),
+ ('00000000-0000-0000-0000-0000000000a2','a2@x'),('00000000-0000-0000-0000-0000000000b1','b1@x'),
+ ('00000000-0000-0000-0000-0000000000a9','oa@x'),('00000000-0000-0000-0000-0000000000a3','a3@x');
+insert into public.profiles (id, organization_id, full_name, email, role, active) values
+ ('00000000-0000-0000-0000-0000000000ad', null, 'Admin', 'admin@x', 'platform_admin', true),
+ ('00000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-000000000000', 'Vend A1', 'a1@x', 'seller', true),
+ ('00000000-0000-0000-0000-0000000000a2', 'a0000000-0000-0000-0000-000000000000', 'Vend A2', 'a2@x', 'seller', true),
+ ('00000000-0000-0000-0000-0000000000a3', 'a0000000-0000-0000-0000-000000000000', 'Vend A3 inativo', 'a3@x', 'seller', false),
+ ('00000000-0000-0000-0000-0000000000b1', 'b0000000-0000-0000-0000-000000000000', 'Vend B1', 'b1@x', 'seller', true),
+ ('00000000-0000-0000-0000-0000000000a9', 'a0000000-0000-0000-0000-000000000000', 'Gestor A', 'oa@x', 'org_admin', true);
+
+create or replace function pg_temp.as_user(uid text) returns void language plpgsql as $$
+begin perform set_config('request.jwt.claim.sub', uid, false); execute 'set role authenticated'; end $$;
+create or replace function pg_temp.cat() returns uuid language sql as $$ select id from public.categories where slug='anel' $$;
+create table pg_temp.results (name text, ok boolean);
+grant all on pg_temp.results to authenticated, anon;
+
+-- 1) Vendedor A1 insere tentando se passar por A2 e pela empresa B → banco força A1/A
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+insert into public.sales (organization_id, seller_id, category_id, customer_name, total_cents, installments)
+values ('b0000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000a2', pg_temp.cat(), '  Maria   Silva ', 10000, 3);
+insert into pg_temp.results select 'insert forçado p/ próprio vendedor e empresa',
+  (select seller_id='00000000-0000-0000-0000-0000000000a1' and organization_id='a0000000-0000-0000-0000-000000000000'
+     and customer_name='Maria Silva' and installment_cents=3333 and installment_remainder_cents=1 from public.sales);
+reset role;
+
+-- vendas de A2 e B1
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2');
+insert into public.sales (organization_id, seller_id, category_id, customer_name, total_cents) values ('a0000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-0000000000a2',pg_temp.cat(),'Cliente A2',5000);
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+insert into public.sales (organization_id, seller_id, category_id, customer_name, total_cents) values ('b0000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-0000000000b1',pg_temp.cat(),'Cliente B1',7000);
+insert into pg_temp.results select 'B1 só vê 1 venda (a sua)', (select count(*)=1 from public.sales);
+insert into pg_temp.results select 'B1 só vê a própria empresa', (select count(*)=1 and bool_and(slug='empresa-b') from public.organizations);
+reset role;
+
+-- 2) Leituras do vendedor A1
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+insert into pg_temp.results select 'A1 vê só suas vendas', (select count(*)=1 from public.sales);
+insert into pg_temp.results select 'A1 vê só o próprio perfil', (select count(*)=1 from public.profiles);
+insert into pg_temp.results select 'A1 não vê auditoria', (select count(*)=0 from public.audit_logs);
+-- tentar editar venda de A2 (RLS esconde → 0 linhas)
+with u as (update public.sales set total_cents=1 where customer_name='Cliente A2' returning 1)
+insert into pg_temp.results select 'A1 não edita venda de A2', (select count(*)=0 from u);
+reset role;
+
+-- 3) Bloqueios por exceção
+create or replace function pg_temp.expect_error(label text, uid text, stmt text) returns void language plpgsql as $$
+begin
+  perform pg_temp.as_user(uid);
+  begin execute stmt; reset role; insert into pg_temp.results values (label, false);
+  exception when others then reset role; insert into pg_temp.results values (label, true); end;
+end $$;
+select pg_temp.expect_error('A1 não exclui venda', '00000000-0000-0000-0000-0000000000a1', $$update public.sales set deleted_at=now() where customer_name='Maria Silva'$$);
+select pg_temp.expect_error('A1 não vira admin', '00000000-0000-0000-0000-0000000000a1', $$update public.profiles set role='platform_admin' where id=auth.uid()$$);
+select pg_temp.expect_error('A1 não troca de empresa', '00000000-0000-0000-0000-0000000000a1', $$update public.profiles set organization_id='b0000000-0000-0000-0000-000000000000' where id=auth.uid()$$);
+select pg_temp.expect_error('A1 não move venda p/ outra empresa', '00000000-0000-0000-0000-0000000000a1', $$update public.sales set organization_id='b0000000-0000-0000-0000-000000000000' where customer_name='Maria Silva'$$);
+select pg_temp.expect_error('A1 não cria empresa', '00000000-0000-0000-0000-0000000000a1', $$insert into public.organizations(name,slug) values ('X','x')$$);
+select pg_temp.expect_error('A1 não escreve auditoria', '00000000-0000-0000-0000-0000000000a1', $$insert into public.audit_logs(table_name,record_id,action) values ('sales',gen_random_uuid(),'insert')$$);
+select pg_temp.expect_error('Inativo não lança venda', '00000000-0000-0000-0000-0000000000a3', $$insert into public.sales (organization_id, seller_id, category_id, customer_name, total_cents) values ('a0000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-0000000000a3',pg_temp.cat(),'X Y',100)$$);
+select pg_temp.expect_error('Gestor A não lança p/ vendedor de B', '00000000-0000-0000-0000-0000000000a9', $$insert into public.sales (organization_id, seller_id, category_id, customer_name, total_cents) values ('b0000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-0000000000b1',pg_temp.cat(),'X Y',100)$$);
+select pg_temp.expect_error('Valor zero rejeitado', '00000000-0000-0000-0000-0000000000a1', $$insert into public.sales (organization_id, seller_id, category_id, customer_name, total_cents) values ('a0000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-0000000000a1',pg_temp.cat(),'X Y',0)$$);
+
+-- 4) A1 pode editar a própria venda; depois empresa bloqueia edição
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+with u as (update public.sales set total_cents=30000 where customer_name='Maria Silva' returning installment_cents)
+insert into pg_temp.results select 'A1 edita a própria venda (300 em 3x = 100)', (select installment_cents=10000 from u);
+reset role;
+update public.organizations set sellers_can_edit_sales=false where slug='empresa-a';
+select pg_temp.expect_error('Edição bloqueada pela empresa', '00000000-0000-0000-0000-0000000000a1', $$update public.sales set total_cents=100 where customer_name='Maria Silva'$$);
+
+-- 5) Gestor da empresa A
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a9');
+insert into pg_temp.results select 'Gestor A vê 2 vendas de A (nenhuma de B)', (select count(*)=2 and bool_and(organization_id='a0000000-0000-0000-0000-000000000000') from public.sales);
+with u as (update public.sales set deleted_at=now() where customer_name='Cliente A2' returning deleted_by)
+insert into pg_temp.results select 'Gestor A exclui (lógico) com autoria', (select deleted_by='00000000-0000-0000-0000-0000000000a9' from u);
+insert into pg_temp.results select 'Gestor A vê auditoria só de A', (select count(*)>0 and bool_and(organization_id='a0000000-0000-0000-0000-000000000000') from public.audit_logs);
+reset role;
+
+-- 6) Admin da plataforma vê tudo
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000ad');
+insert into pg_temp.results select 'Admin vê vendas de todas as empresas', (select count(distinct organization_id)=2 from public.sales);
+reset role;
+
+-- 7) Anônimo
+set role anon;
+do $$ begin perform 1 from public.sales; insert into pg_temp.results values ('Anônimo bloqueado', false);
+exception when insufficient_privilege then insert into pg_temp.results values ('Anônimo bloqueado', true); end $$;
+reset role;
+
+insert into pg_temp.results select 'Auditoria registrou soft_delete', exists(select 1 from public.audit_logs where action='soft_delete');
+
+select (case when ok then 'PASS' else 'FAIL' end) || '  ' || name from pg_temp.results;

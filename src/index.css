@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply font-sans bg-ivory text-navy; }
+  h1, h2, h3 { @apply font-display tracking-tight; }
+  :focus-visible { @apply outline-none ring-2 ring-gold-400 ring-offset-2 ring-offset-ivory; }
+}
+
+@layer components {
+  .gold-rule { @apply h-px bg-gradient-to-r from-transparent via-gold-400 to-transparent; }
+  .field-label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-navy/60; }
+  .field-input {
+    @apply w-full rounded-lg border border-navy/15 bg-white px-3.5 py-2.5 text-[15px] text-navy
+           placeholder:text-navy/35 transition focus:border-gold-400 focus:shadow-gold focus:outline-none
+           disabled:cursor-not-allowed disabled:bg-ivory-300/50;
+  }
+}
