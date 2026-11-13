@@ -7,8 +7,17 @@ Arquitetura detalhada: [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)
 
 ## Status do desenvolvimento
 
-| Etapa | Situação |
+| Módulo | Situação |
 |---|---|
+| Login, recuperação de senha, multitenant e segurança (RLS) | ✅ |
+| Dashboard (indicadores, gráficos, parcelas a receber) | ✅ |
+| Nova venda (categorias visuais, parcelas, vencimentos) | ✅ |
+| Histórico (filtros, busca, paginação, edição/exclusão auditadas, pagamentos) | ✅ |
+| Relatórios mensais (comparativos, PDF e Excel) | ✅ |
+| Vendedores (cadastro pelo admin, senha, ativar/desativar) | ✅ |
+| Empresas (gestão de várias empresas) | ⏳ em desenvolvimento |
+
+---|---|
 | 1. Arquitetura e estrutura | ✅ |
 | 2. React/TS/Vite + identidade visual | ✅ |
 | 3. Banco de dados Supabase + RLS | ✅ (24 testes de segurança passando) |
@@ -36,6 +45,8 @@ No **SQL Editor**, execute **em ordem** os arquivos de `supabase/migrations/`:
 1. `20261113000001_schema.sql`
 2. `20261113000002_security_rls.sql`
 3. `20261113000003_seed_categories.sql`
+4. `20261113000004_profiles_contact_reports.sql`
+5. `20261113000005_installments.sql`
 
 (Ou, com o Supabase CLI: `npx supabase link --project-ref SEU_REF && npx supabase db push`.)
 
@@ -74,7 +85,7 @@ npm run dev                  # http://localhost:5173/joiaflow/
 | `npm run dev` | Servidor de desenvolvimento |
 | `npm run build` | Typecheck + build de produção |
 | `npm test` | Testes unitários (dinheiro, parcelas, fuso horário) |
-| `./supabase/tests/run.sh` | Testes de isolamento RLS num PostgreSQL local descartável |
+| `./supabase/tests/run.sh` | 38 testes de segurança/parcelas num PostgreSQL local descartável |
 
 ## Segurança — resumo
 - Sem cadastro público; usuários só pela Edge Function `admin-users`.

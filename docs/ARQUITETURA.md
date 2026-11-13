@@ -49,6 +49,20 @@
 
 Testes automatizados em `supabase/tests/` comprovam 24 cenários (vendedor de A não vê B, não vira admin, anônimo bloqueado etc.).
 
+## Parcelas e recebimentos
+
+- Cada venda gera automaticamente suas parcelas na tabela `installments` (trigger no banco).
+- Vencimentos mensais a partir do 1º vencimento, sempre no mesmo dia (dias 29–31 caem no último dia dos meses curtos).
+- "Pago no ato" marca a 1ª parcela como paga na criação.
+- Confirmar/desfazer pagamento grava `paid_at` e `paid_by` (quem confirmou) e entra na auditoria.
+- Usuários só podem alterar a coluna `paid_at`; valor e vencimento nunca são editáveis pela API.
+- Com parcela paga, o valor/parcelamento/vencimento da venda fica travado (desfaça o pagamento antes).
+- O Dashboard alerta parcelas atrasadas, vencendo hoje e nos próximos 7 dias.
+
+## Relatórios
+
+Funções `sales_summary` e `sales_by_month` (SECURITY INVOKER: respeitam o RLS) agregam no banco pela data efetiva da venda, no fuso de Brasília. Exportação em PDF (jsPDF) e Excel (SheetJS), carregadas sob demanda.
+
 ## Dinheiro e datas
 
 - Valores em **centavos (bigint)**. Parcelas calculadas pelo próprio banco (colunas geradas):

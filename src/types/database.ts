@@ -23,6 +23,8 @@ export interface Profile {
   role: UserRole;
   active: boolean;
   can_edit_own_sales: boolean;
+  phone: string | null;
+  address: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -49,6 +51,8 @@ export interface Sale {
   installment_cents: number;
   installment_remainder_cents: number;
   notes: string | null;
+  first_due_date: string;
+  upfront_paid: boolean;
   created_by: string | null;
   updated_by: string | null;
   created_at: string;
@@ -74,3 +78,42 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   org_admin: 'Gestor da empresa',
   seller: 'Vendedor',
 };
+
+export interface Installment {
+  id: string;
+  sale_id: string;
+  organization_id: string;
+  number: number;
+  due_date: string; // AAAA-MM-DD
+  amount_cents: number;
+  paid_at: string | null;
+  paid_by: string | null;
+}
+
+/** Venda com dados relacionados (para listagens). */
+export interface SaleWithRelations extends Sale {
+  category: Pick<Category, 'name' | 'slug'> | null;
+  seller: Pick<Profile, 'full_name'> | null;
+  organization: Pick<Organization, 'name'> | null;
+  installment_rows?: Pick<Installment, 'id' | 'paid_at' | 'due_date'>[];
+}
+
+/** Parcela com dados da venda (para alertas de vencimento). */
+export interface InstallmentWithSale extends Installment {
+  sale: {
+    id: string;
+    customer_name: string;
+    installments: number;
+    seller_id: string;
+    seller: Pick<Profile, 'full_name'> | null;
+  };
+}
+
+export interface SummaryItem { id: string; name: string; slug?: string; total_cents: number; count: number }
+export interface SalesSummary {
+  total_cents: number;
+  count: number;
+  by_category: SummaryItem[];
+  by_seller: SummaryItem[];
+  by_day: { day: string; total_cents: number; count: number }[];
+}

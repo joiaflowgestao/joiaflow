@@ -93,6 +93,55 @@ do $$ begin perform 1 from public.sales; insert into pg_temp.results values ('An
 exception when insufficient_privilege then insert into pg_temp.results values ('Anônimo bloqueado', true); end $$;
 reset role;
 
+
+-- 8) Funções de relatório respeitam o RLS
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+insert into pg_temp.results select 'Relatório de B1 só soma B1',
+  (select (public.sales_summary(now() - interval '1 day', now() + interval '1 day')->>'total_cents')::bigint = 7000);
+insert into pg_temp.results select 'Relatório de B1 ignora filtro de empresa A',
+  (select (public.sales_summary(now() - interval '1 day', now() + interval '1 day', 'a0000000-0000-0000-0000-000000000000')->>'count')::int = 0);
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000ad');
+insert into pg_temp.results select 'Relatório do admin soma todas (exceto excluída)',
+  (select (public.sales_summary(now() - interval '1 day', now() + interval '1 day')->>'total_cents')::bigint = 37000
+     and jsonb_array_length(public.sales_summary(now() - interval '1 day', now() + interval '1 day')->'by_seller') = 2);
+insert into pg_temp.results select 'Totais por mês',
+  (select sum(count) = 2 from public.sales_by_month(now() - interval '60 days', now() + interval '1 day'));
+reset role;
+set role anon;
+do $$ begin perform public.sales_summary(now(), now()); insert into pg_temp.results values ('Anônimo sem relatório', false);
+exception when insufficient_privilege then insert into pg_temp.results values ('Anônimo sem relatório', true); end $$;
+reset role;
+
+-- 9) Parcelas
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2');
+insert into public.sales (organization_id, seller_id, category_id, customer_name, total_cents, installments, sold_at, first_due_date)
+values ('a0000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-0000000000a2',pg_temp.cat(),'Parcelado A2',10000,3,'2026-01-20T12:00:00Z','2026-01-31');
+insert into pg_temp.results select 'Gera 3 parcelas somando o total (1ª com o centavo extra)',
+  (select count(*)=3 and sum(amount_cents)=10000 and max(amount_cents)=3334
+     from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='Parcelado A2');
+insert into pg_temp.results select 'Vencimento mensal no mesmo dia (31 → 28/fev → 31/mar)',
+  (select array_agg(due_date order by number) = array['2026-01-31','2026-02-28','2026-03-31']::date[]
+     from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='Parcelado A2');
+with u as (update public.installments i set paid_at=now() from public.sales s
+           where s.id=i.sale_id and s.customer_name='Parcelado A2' and i.number=1 returning i.paid_by)
+insert into pg_temp.results select 'Vendedor confirma pagamento da própria venda', (select paid_by='00000000-0000-0000-0000-0000000000a2' from u);
+reset role;
+select pg_temp.expect_error('Vendedor não altera valor da parcela', '00000000-0000-0000-0000-0000000000a2', $$update public.installments set amount_cents=1$$);
+select pg_temp.expect_error('Vendedor não cria parcela', '00000000-0000-0000-0000-0000000000a2', $$insert into public.installments(sale_id, organization_id, number, due_date, amount_cents) select id, organization_id, 9, now()::date, 1 from public.sales limit 1$$);
+select pg_temp.expect_error('Não muda valor com parcela paga', '00000000-0000-0000-0000-0000000000a9', $$update public.sales set total_cents=20000 where customer_name='Parcelado A2'$$);
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+insert into pg_temp.results select 'B1 não vê parcelas da empresa A', (select count(*)=0 from public.installments where organization_id='a0000000-0000-0000-0000-000000000000');
+with u as (update public.installments set paid_at=now() where organization_id='a0000000-0000-0000-0000-000000000000' returning 1)
+insert into pg_temp.results select 'B1 não confirma pagamento da empresa A', (select count(*)=0 from u);
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+insert into public.sales (organization_id, seller_id, category_id, customer_name, total_cents, installments, upfront_paid)
+values ('a0000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-0000000000a1',pg_temp.cat(),'A vista pago',5000,1,true);
+insert into pg_temp.results select 'À vista pago no ato já nasce quitado',
+  (select bool_and(paid_at is not null and paid_by='00000000-0000-0000-0000-0000000000a1') from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='A vista pago');
+reset role;
+
 insert into pg_temp.results select 'Auditoria registrou soft_delete', exists(select 1 from public.audit_logs where action='soft_delete');
 
 select (case when ok then 'PASS' else 'FAIL' end) || '  ' || name from pg_temp.results;

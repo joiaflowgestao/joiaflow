@@ -5,3 +5,5 @@ create function auth.uid() returns uuid language sql stable as $$ select nullif(
 grant usage on schema auth to authenticated, anon;
 grant execute on function auth.uid() to authenticated, anon;
 grant usage on schema public to authenticated, anon;
+-- Igual ao Supabase: novas tabelas em public já nascem com privilégios para authenticated
+alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;

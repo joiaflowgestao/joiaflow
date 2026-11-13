@@ -17,3 +17,26 @@ describe('datetime (America/Sao_Paulo)', () => {
     expect(monthRange(2026, 12)).toEqual({ start: '2026-12-01T03:00:00.000Z', end: '2027-01-01T03:00:00.000Z' });
   });
 });
+
+import { addDaysISO, dayRange, shiftMonth } from './datetime';
+describe('datetime helpers', () => {
+  it('soma dias atravessando mês/ano', () => {
+    expect(addDaysISO('2026-12-31', 1)).toBe('2027-01-01');
+  });
+  it('dia em SP', () => {
+    expect(dayRange('2026-11-13')).toEqual({ start: '2026-11-13T03:00:00.000Z', end: '2026-11-14T03:00:00.000Z' });
+  });
+  it('desloca meses', () => {
+    expect(shiftMonth(2026, 1, -1)).toEqual({ year: 2025, month: 12 });
+    expect(shiftMonth(2026, 11, -5)).toEqual({ year: 2026, month: 6 });
+  });
+});
+
+import { dueSchedule, formatDateOnly } from './datetime';
+describe('vencimentos', () => {
+  it('mesmo dia todo mês, ajustando meses curtos (igual ao banco)', () => {
+    expect(dueSchedule('2026-01-31', 3)).toEqual(['2026-01-31', '2026-02-28', '2026-03-31']);
+    expect(dueSchedule('2026-11-10', 3)).toEqual(['2026-11-10', '2026-12-10', '2027-01-10']);
+  });
+  it('formata data pura', () => expect(formatDateOnly('2026-12-10')).toBe('10/12/2026'));
+});

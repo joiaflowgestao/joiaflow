@@ -50,3 +50,68 @@ export function monthRange(year: number, month: number): { start: string; end: s
 }
 
 export const MONTHS_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** Soma dias a uma data AAAA-MM-DD (sem fuso). */
+export function addDaysISO(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+}
+
+/** Intervalo [início, fim) de um dia em São Paulo. */
+export function dayRange(date: string): { start: string; end: string } {
+  return { start: fromLocalInputs(date, '00:00'), end: fromLocalInputs(addDaysISO(date, 1), '00:00') };
+}
+
+/** Intervalo [início, fim) entre duas datas AAAA-MM-DD (inclusivas) em São Paulo. */
+export function dateSpan(from: string, to: string): { start: string; end: string } {
+  return { start: fromLocalInputs(from, '00:00'), end: fromLocalInputs(addDaysISO(to, 1), '00:00') };
+}
+
+export function yearRange(year: number): { start: string; end: string } {
+  return { start: fromLocalInputs(`${year}-01-01`, '00:00'), end: fromLocalInputs(`${year + 1}-01-01`, '00:00') };
+}
+
+/** Ano e mês atuais em São Paulo. */
+export function currentYearMonth(): { year: number; month: number } {
+  const { date } = toLocalInputs();
+  const [y, m] = date.split('-').map(Number);
+  return { year: y, month: m };
+}
+
+export function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/** Mês anterior/seguinte (delta em meses). */
+export function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
+  const idx = year * 12 + (month - 1) + delta;
+  return { year: Math.floor(idx / 12), month: (idx % 12) + 1 };
+}
+
+export const MONTHS_SHORT_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+/** Soma meses mantendo o dia; se o mês não tiver o dia, usa o último (igual ao PostgreSQL). */
+export function addMonthsISO(date: string, months: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const idx = y * 12 + (m - 1) + months;
+  const ny = Math.floor(idx / 12);
+  const nm = (idx % 12) + 1;
+  const day = Math.min(d, daysInMonth(ny, nm));
+  return `${ny}-${pad2(nm)}-${pad2(day)}`;
+}
+
+/** Datas de vencimento de todas as parcelas. */
+export function dueSchedule(firstDue: string, installments: number): string[] {
+  return Array.from({ length: installments }, (_, i) => addMonthsISO(firstDue, i));
+}
+
+/** Formata AAAA-MM-DD (data pura, sem fuso) como DD/MM/AAAA. */
+export function formatDateOnly(date: string): string {
+  const [y, m, d] = date.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+export const todayISO = () => toLocalInputs().date;

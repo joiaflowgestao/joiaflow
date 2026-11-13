@@ -1,7 +1,8 @@
 import { LogOut, Menu, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Logo } from '@/components/ui/Logo';
+import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/cn';
 import { ROLE_LABELS } from '@/types/database';
@@ -101,9 +102,11 @@ export function AppLayout() {
         </div>
       )}
 
-      <main className="px-4 pb-28 pt-6 sm:px-6 lg:ml-64 lg:px-10 lg:pb-12 lg:pt-10">
+      <main className="overflow-x-hidden px-4 pb-28 pt-6 sm:px-6 lg:ml-64 lg:px-10 lg:pb-12 lg:pt-10">
         <div className="mx-auto max-w-6xl">
-          <Outlet />
+          <Suspense fallback={<div className="flex justify-center py-24 text-gold-500"><Spinner className="h-7 w-7" /></div>}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
 

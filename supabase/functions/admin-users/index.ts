@@ -39,6 +39,14 @@ function str(v: unknown, field: string, min = 1, max = 200): string {
   }
   return v.trim();
 }
+/** Campo de texto opcional: vazio vira null. */
+function optStr(v: unknown, field: string, max: number): string | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== 'string') throw new HttpError(400, `Campo inválido: ${field}.`);
+  const t = v.trim();
+  if (t.length > max) throw new HttpError(400, `Campo muito longo: ${field}.`);
+  return t || null;
+}
 function password(v: unknown): string {
   if (typeof v !== 'string' || v.length < 8 || v.length > 72) {
     throw new HttpError(400, 'A senha deve ter entre 8 e 72 caracteres.');
@@ -138,6 +146,8 @@ Deno.serve(async (req) => {
         email,
         role: r,
         organization_id,
+        phone: optStr(body.phone, 'telefone', 30),
+        address: optStr(body.address, 'endereço', 300),
         can_edit_own_sales: body.can_edit_own_sales !== false,
       });
       if (profErr) {
@@ -155,6 +165,8 @@ Deno.serve(async (req) => {
 
       const patch: Record<string, unknown> = {};
       if (body.full_name !== undefined) patch.full_name = str(body.full_name, 'nome completo', 2, 120);
+      if (body.phone !== undefined) patch.phone = optStr(body.phone, 'telefone', 30);
+      if (body.address !== undefined) patch.address = optStr(body.address, 'endereço', 300);
       if (body.can_edit_own_sales !== undefined) patch.can_edit_own_sales = Boolean(body.can_edit_own_sales);
       if (body.role !== undefined) {
         const r = role(body.role);
