@@ -38,3 +38,17 @@ describe('money', () => {
     expect(formatCents(123456)).toBe('R$ 1.234,56');
   });
 });
+
+import { commissionOf, describePayment } from './money';
+describe('entrada e comissão', () => {
+  it('entrada + parcelas', () => {
+    expect(describePayment(10000, 2, 5000)).toBe('Entrada R$ 50,00 + 2x de R$ 25,00');
+    expect(describePayment(10000, 1, 10000)).toBe('Pago no ato · R$ 100,00');
+    expect(describePayment(10000, 1, 4000)).toBe('Entrada R$ 40,00 + 1x de R$ 60,00');
+  });
+  it('comissão arredonda igual ao banco (inclusive negativa)', () => {
+    expect(commissionOf(10000, 30)).toBe(3000);
+    expect(commissionOf(12345, 30)).toBe(3704);  // 3703,5 → 3704
+    expect(commissionOf(-12345, 30)).toBe(-3704);
+  });
+});

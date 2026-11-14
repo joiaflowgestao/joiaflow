@@ -65,7 +65,7 @@ export function ExchangesPage() {
       <PageHeader title="Trocas" subtitle="Troque itens de uma venda: o valor e as parcelas são recalculados automaticamente." />
 
       <div className="grid gap-6 lg:grid-cols-5">
-        <Card className="lg:col-span-2 lg:self-start">
+        <Card className="min-w-0 lg:col-span-2 lg:self-start">
           <CardHeader title="Nova troca" subtitle="Encontre a venda pelo nome da cliente" />
           <CardBody className="space-y-3">
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nome da cliente" leading={<Search className="h-4 w-4" />} />
@@ -77,13 +77,13 @@ export function ExchangesPage() {
               <ul className="divide-y divide-navy/[0.06] rounded-xl border border-navy/[0.08]">
                 {!search.trim() && <li className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-navy/45">Vendas recentes</li>}
                 {sales.map((s) => (
-                  <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <li key={s.id} className="flex min-w-0 items-center gap-3 px-3 py-2.5">
                     <CategoryIcon slug={s.category?.slug ?? ''} className="h-5 w-5 shrink-0 text-gold-500" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-navy">{s.customer_name}</p>
                       <p className="truncate text-xs text-navy/55">{formatDate(s.sold_at)} · {formatCents(s.total_cents)} · {itemsLabel(s)}</p>
                     </div>
-                    <Button size="sm" variant="gold" onClick={() => setTarget(s)}><ArrowLeftRight className="h-3.5 w-3.5" /> Trocar</Button>
+                    <Button size="sm" variant="gold" className="shrink-0" onClick={() => setTarget(s)}><ArrowLeftRight className="h-3.5 w-3.5" /> Trocar</Button>
                   </li>
                 ))}
               </ul>
@@ -92,7 +92,7 @@ export function ExchangesPage() {
           </CardBody>
         </Card>
 
-        <div className="space-y-4 lg:col-span-3">
+        <div className="min-w-0 space-y-4 lg:col-span-3">
           <Card>
             <CardBody className="grid grid-cols-2 gap-3 pt-5 sm:pt-6">
               <Select label="Mês" value={month} onChange={(e) => setMonth(Number(e.target.value))}>

@@ -56,7 +56,10 @@ begin
   begin execute stmt; reset role; insert into pg_temp.results values (label, false);
   exception when others then reset role; insert into pg_temp.results values (label, true); end;
 end $$;
-select pg_temp.expect_error('A1 não exclui venda', '00000000-0000-0000-0000-0000000000a1', $$update public.sales set deleted_at=now() where customer_name='Maria Silva'$$);
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+with u as (update public.sales set deleted_at=now() where customer_name='Cliente A2' returning 1)
+insert into pg_temp.results select 'A1 não exclui venda de A2', (select count(*)=0 from u);
+reset role;
 select pg_temp.expect_error('A1 não vira admin', '00000000-0000-0000-0000-0000000000a1', $$update public.profiles set role='platform_admin' where id=auth.uid()$$);
 select pg_temp.expect_error('A1 não troca de empresa', '00000000-0000-0000-0000-0000000000a1', $$update public.profiles set organization_id='b0000000-0000-0000-0000-000000000000' where id=auth.uid()$$);
 select pg_temp.expect_error('A1 não move venda p/ outra empresa', '00000000-0000-0000-0000-0000000000a1', $$update public.sales set organization_id='b0000000-0000-0000-0000-000000000000' where customer_name='Maria Silva'$$);
@@ -123,18 +126,20 @@ insert into pg_temp.results select 'Gera 3 parcelas somando o total (1ª com o c
 insert into pg_temp.results select 'Vencimento mensal no mesmo dia (31 → 28/fev → 31/mar)',
   (select array_agg(due_date order by number) = array['2026-01-31','2026-02-28','2026-03-31']::date[]
      from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='Parcelado A2');
-with u as (update public.installments i set paid_at=now() from public.sales s
-           where s.id=i.sale_id and s.customer_name='Parcelado A2' and i.number=1 returning i.paid_by)
-insert into pg_temp.results select 'Vendedor confirma pagamento da própria venda', (select paid_by='00000000-0000-0000-0000-0000000000a2' from u);
+select public.register_payment((select id from public.sales where customer_name='Parcelado A2'), 3334);
+insert into pg_temp.results select 'Vendedor registra pagamento da própria venda',
+  (select paid_by='00000000-0000-0000-0000-0000000000a2' and paid_cents=3334 from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='Parcelado A2' and i.number=1);
 reset role;
 select pg_temp.expect_error('Vendedor não altera valor da parcela', '00000000-0000-0000-0000-0000000000a2', $$update public.installments set amount_cents=1$$);
 select pg_temp.expect_error('Vendedor não cria parcela', '00000000-0000-0000-0000-0000000000a2', $$insert into public.installments(sale_id, organization_id, number, due_date, amount_cents) select id, organization_id, 9, now()::date, 1 from public.sales limit 1$$);
 select pg_temp.expect_error('Não muda valor com parcela paga', '00000000-0000-0000-0000-0000000000a9', $$update public.sales set total_cents=20000 where customer_name='Parcelado A2'$$);
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
 insert into pg_temp.results select 'B1 não vê parcelas da empresa A', (select count(*)=0 from public.installments where organization_id='a0000000-0000-0000-0000-000000000000');
-with u as (update public.installments set paid_at=now() where organization_id='a0000000-0000-0000-0000-000000000000' returning 1)
-insert into pg_temp.results select 'B1 não confirma pagamento da empresa A', (select count(*)=0 from u);
 reset role;
+create table pg_temp.ids_parc as select id from public.sales where customer_name='Parcelado A2';
+grant select on pg_temp.ids_parc to authenticated;
+select pg_temp.expect_error('B1 não registra pagamento na empresa A', '00000000-0000-0000-0000-0000000000b1',
+  $$select public.register_payment((select id from pg_temp.ids_parc), 100)$$);
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
 insert into public.sales (organization_id, seller_id, category_id, customer_name, total_cents, installments, upfront_paid)
 values ('a0000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-0000000000a1',pg_temp.cat(),'A vista pago',5000,1,true);
@@ -227,8 +232,7 @@ reset role;
 -- 13) Trocas
 -- Venda "Multi Itens" (A2): 2x brinco 45,00 + 1x anel 120,00 = 210,00 em 2x de 105,00. Paga a 1ª.
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2');
-update public.installments i set paid_at = now() from public.sales s
- where s.id = i.sale_id and s.customer_name = 'Multi Itens' and i.number = 1;
+select public.register_payment((select id from public.sales where customer_name = 'Multi Itens'), 10500);
 -- Troca: devolve 1 brinco, leva 1 pulseira de 80,00 → novo total 245,00
 create table pg_temp.ex1 as
 select public.exchange_sale(
@@ -282,6 +286,108 @@ select pg_temp.expect_error('Não pode devolver todos os itens', '00000000-0000-
   $$select public.exchange_sale((select id from pg_temp.ids2), 'Devolveu tudo', jsonb_build_array(jsonb_build_object('item_id',(select id from public.sale_items where sale_id=(select id from pg_temp.ids2) limit 1),'quantity',1)), '[]'::jsonb)$$);
 select pg_temp.expect_error('Vendedor não grava troca direto na tabela', '00000000-0000-0000-0000-0000000000a2',
   $$insert into public.exchanges(sale_id, organization_id, reason, old_total_cents, new_total_cents, difference_cents) select id, organization_id, 'x x x', 1, 1, 0 from public.sales limit 1$$);
+
+-- 14) Vendedora exclui a própria venda (segue a permissão de edição)
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+select public.save_sale(null, jsonb_build_object('customer_name','Excluir B1','sold_at',now(),'installments',1,'first_due_date',current_date,
+  'items', jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='anel'),'quantity',1,'unit_price_cents',1000))));
+with u as (update public.sales set deleted_at = now() where customer_name='Excluir B1' returning deleted_by)
+insert into pg_temp.results select 'Vendedora (edição liberada) exclui a própria venda', (select deleted_by='00000000-0000-0000-0000-0000000000b1' from u);
+reset role;
+select pg_temp.expect_error('Vendedora com edição bloqueada não exclui', '00000000-0000-0000-0000-0000000000a1',
+  $$update public.sales set deleted_at = now() where customer_name='Maria Silva'$$);
+
+-- 15) Valor pago no ato (entrada)
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+select public.save_sale(null, jsonb_build_object('customer_name','Entrada B1','sold_at',now(),'installments',2,'first_due_date',current_date + 30,
+  'down_payment_cents',5000,'items', jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='anel'),'quantity',1,'unit_price_cents',10001))));
+insert into pg_temp.results select 'Entrada: 1 parcela paga (50,00) + restante 50,01 em 2x',
+  (select array_agg(amount_cents order by number) = array[5000,2501,2500]::bigint[]
+          and array_agg(paid_at is not null order by number) = array[true,false,false]
+     from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='Entrada B1');
+select public.save_sale(null, jsonb_build_object('customer_name','Quitado B1','sold_at',now(),'installments',1,'first_due_date',current_date,
+  'down_payment_cents',3000,'items', jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='anel'),'quantity',1,'unit_price_cents',3000))));
+insert into pg_temp.results select 'Pago todo no ato: 1 parcela já quitada',
+  (select count(*)=1 and bool_and(paid_at is not null) from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='Quitado B1');
+reset role;
+select pg_temp.expect_error('Entrada maior que o total é rejeitada', '00000000-0000-0000-0000-0000000000b1',
+  $$select public.save_sale(null, jsonb_build_object('customer_name','X Y','sold_at',now(),'installments',1,'first_due_date',current_date,'down_payment_cents',99999,
+    'items', jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='anel'),'quantity',1,'unit_price_cents',1000))))$$);
+
+-- 16) Troca em mês diferente: faturamento e comissão vão para o mês da troca
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+select public.save_sale(null, jsonb_build_object('customer_name','Antiga B1','sold_at',now() - interval '45 days','installments',1,'first_due_date',(now() - interval '45 days')::date,
+  'items', jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='brinco'),'quantity',1,'unit_price_cents',10000))));
+select public.exchange_sale((select id from public.sales where customer_name='Antiga B1'), 'Trocou por um conjunto',
+  jsonb_build_array(jsonb_build_object('item_id',(select i.id from public.sale_items i join public.sales s on s.id=i.sale_id where s.customer_name='Antiga B1'),'quantity',1)),
+  jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='conjunto'),'quantity',1,'unit_price_cents',15000)));
+insert into pg_temp.results select 'Mês da venda continua com o valor original (100,00) e comissão 30,00',
+  (select (r->>'total_cents')::bigint = 10000 and (r->>'commission_cents')::bigint = 3000
+          and exists (select 1 from jsonb_array_elements(r->'by_category') c where c->>'slug'='brinco' and (c->>'count')::int = 1)
+          and not exists (select 1 from jsonb_array_elements(r->'by_category') c where c->>'slug'='conjunto')
+     from (select public.sales_summary(now() - interval '46 days', now() - interval '44 days') r) z);
+insert into pg_temp.results select 'Mês da troca recebe a diferença (+50,00) e a comissão dela (15,00)',
+  (select (r->>'exchanges_cents')::bigint = 5000 and (r->>'exchanges_count')::int = 1
+     from (select public.sales_summary(now() - interval '1 hour', now() + interval '1 hour', null, '00000000-0000-0000-0000-0000000000b1') r) z)
+  and (select (public.sales_summary(now() - interval '1 hour', now() + interval '1 hour', null, '00000000-0000-0000-0000-0000000000b1')->>'commission_cents')::bigint
+            - (public.sales_summary(now() - interval '1 hour', now() + interval '1 hour', null, '00000000-0000-0000-0000-0000000000b1')->>'commission_cents')::bigint = 0);
+insert into pg_temp.results select 'Categorias do mês da troca: +1 conjunto, -1 brinco',
+  (select exists (select 1 from jsonb_array_elements(r->'by_category') c where c->>'slug'='conjunto' and (c->>'count')::int = 1 and (c->>'total_cents')::int = 15000)
+     from (select public.sales_summary(now() - interval '1 hour', now() + interval '1 hour', null, '00000000-0000-0000-0000-0000000000b1') r) z);
+reset role;
+
+-- 17) Maletas
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+insert into public.kits (seller_id, organization_id, received_on) values ('00000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-000000000000', current_date - 10);
+insert into pg_temp.results select 'Maleta da vendedora fica sempre com ela e na empresa dela',
+  (select seller_id='00000000-0000-0000-0000-0000000000b1' and organization_id='b0000000-0000-0000-0000-000000000000' from public.kits);
+reset role;
+select pg_temp.expect_error('Só uma maleta em aberto por vendedora', '00000000-0000-0000-0000-0000000000b1',
+  $$insert into public.kits (received_on) values (current_date)$$);
+select pg_temp.expect_error('Entrega antes do recebimento é rejeitada', '00000000-0000-0000-0000-0000000000b1',
+  $$update public.kits set returned_on = received_on - 1$$);
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+insert into pg_temp.results select 'A1 não vê maleta de B1', (select count(*)=0 from public.kits);
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a9');
+insert into public.kits (seller_id, received_on) values ('00000000-0000-0000-0000-0000000000a2', current_date);
+insert into pg_temp.results select 'Gestor registra maleta para vendedora da empresa', (select count(*)=1 from public.kits where seller_id='00000000-0000-0000-0000-0000000000a2');
+reset role;
+select pg_temp.expect_error('Gestor A não registra maleta para vendedora de B', '00000000-0000-0000-0000-0000000000a9',
+  $$insert into public.kits (seller_id, received_on) values ('00000000-0000-0000-0000-0000000000b1', current_date - 50)$$);
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+with u as (update public.kits set returned_on = current_date returning 1)
+insert into pg_temp.results select 'Vendedora registra a entrega da própria maleta', (select count(*)=1 from u);
+reset role;
+
+-- 18) Pagamentos com valor livre (parciais)
+create table pg_temp.ids_ent as select id from public.sales where customer_name='Entrada B1';
+grant select on pg_temp.ids_ent to authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+create table pg_temp.pay1 as select public.register_payment((select id from pg_temp.ids_ent), 3000, null, 'Pix parcial') as r;
+insert into pg_temp.results select 'Pagamento livre abate em ordem: 2ª parcela quitada, 3ª com R$ 4,99 abatido',
+  (select array_agg(paid_cents order by number) = array[5000,2501,499]::bigint[]
+          and array_agg(paid_at is not null order by number) = array[true,true,false]
+     from public.installments where sale_id=(select id from pg_temp.ids_ent));
+reset role;
+select pg_temp.expect_error('Pagamento maior que o saldo devedor é rejeitado', '00000000-0000-0000-0000-0000000000b1',
+  $$select public.register_payment((select id from pg_temp.ids_ent), 2002)$$);
+select pg_temp.expect_error('Pagamento com data futura é rejeitado', '00000000-0000-0000-0000-0000000000b1',
+  $$select public.register_payment((select id from pg_temp.ids_ent), 100, current_date + 5)$$);
+select pg_temp.expect_error('Pagamento no ato não é excluído pela tela de pagamentos', '00000000-0000-0000-0000-0000000000b1',
+  $$select public.delete_payment((select id from public.payments where sale_id=(select id from pg_temp.ids_ent) and kind='down_payment'))$$);
+select pg_temp.expect_error('A1 não exclui pagamento de venda de B1', '00000000-0000-0000-0000-0000000000a1',
+  $$select public.delete_payment((select (r->>'id')::uuid from pg_temp.pay1))$$);
+select pg_temp.expect_error('Valor da venda não muda com pagamento registrado', '00000000-0000-0000-0000-0000000000b1',
+  $$update public.sales set total_cents = 20000 where id=(select id from pg_temp.ids_ent)$$);
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+select public.delete_payment((select (r->>'id')::uuid from pg_temp.pay1));
+insert into pg_temp.results select 'Excluir pagamento desfaz o abatimento',
+  (select array_agg(paid_cents order by number) = array[5000,0,0]::bigint[] from public.installments where sale_id=(select id from pg_temp.ids_ent));
+select public.register_payment((select id from pg_temp.ids_ent), 5001);
+insert into pg_temp.results select 'Pagar o saldo todo quita a venda',
+  (select bool_and(paid_at is not null) from public.installments where sale_id=(select id from pg_temp.ids_ent));
+reset role;
 
 insert into pg_temp.results select 'Auditoria registrou soft_delete', exists(select 1 from public.audit_logs where action='soft_delete');
 

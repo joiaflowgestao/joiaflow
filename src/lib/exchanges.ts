@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase';
 import type { Exchange, ExchangeItem } from '@/types/database';
 
 export const EXCHANGE_SELECT =
-  '*, user:profiles!exchanges_user_id_fkey(full_name), sale:sales!inner(id, customer_name, seller_id, organization_id, seller:profiles!sales_seller_id_fkey(full_name))';
+  '*, user:profiles!exchanges_user_id_fkey(full_name), sale:sales!inner(id, customer_name, seller_id, organization_id, sold_at, seller:profiles!sales_seller_id_fkey(full_name))';
 
 /** "2x Brinco, 1x Anel" */
 export const exchangeItemsLabel = (items: ExchangeItem[]) =>

@@ -141,12 +141,12 @@ export function FinancePage() {
       <PageHeader title="Lançamentos financeiros" subtitle="Seu controle pessoal do que recebe e gasta. Não entra nos relatórios de vendas." />
 
       <div className="grid gap-6 lg:grid-cols-5">
-        <Card className="lg:col-span-2 lg:self-start">
+        <Card className="min-w-0 lg:col-span-2 lg:self-start">
           <CardHeader title="Novo lançamento" />
           <CardBody><EntryForm onSaved={load} /></CardBody>
         </Card>
 
-        <div className="space-y-4 lg:col-span-3">
+        <div className="min-w-0 space-y-4 lg:col-span-3">
           <Card>
             <CardBody className="grid grid-cols-2 gap-3 pt-5 sm:pt-6">
               <Select label="Mês" value={month} onChange={(e) => setMonth(Number(e.target.value))}>

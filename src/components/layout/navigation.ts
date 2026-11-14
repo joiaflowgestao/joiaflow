@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BarChart3, Building2, History, LayoutDashboard, NotebookPen, PlusCircle, Settings, Users, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, Briefcase, Building2, History, LayoutDashboard, NotebookPen, PlusCircle, Settings, Users, type LucideIcon } from 'lucide-react';
 import type { UserRole } from '@/types/database';
 
 export interface NavItem {
@@ -15,6 +15,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/nova-venda', label: 'Nova venda', short: 'Vender', icon: PlusCircle, primary: true },
   { to: '/historico', label: 'Histórico de vendas', short: 'Histórico', icon: History, primary: true },
   { to: '/trocas', label: 'Trocas', short: 'Trocas', icon: ArrowLeftRight },
+  { to: '/maletas', label: 'Maletas', short: 'Maletas', icon: Briefcase },
   { to: '/relatorios', label: 'Relatórios', short: 'Relatórios', icon: BarChart3, primary: true },
   { to: '/lancamentos', label: 'Lançamentos financeiros', short: 'Finanças', icon: NotebookPen, primary: true },
   { to: '/vendedores', label: 'Vendedores', short: 'Vendedores', icon: Users, roles: ['platform_admin', 'org_admin'] },

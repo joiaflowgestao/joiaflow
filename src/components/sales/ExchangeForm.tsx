@@ -48,7 +48,7 @@ export function ExchangeForm({ saleId, customer, onDone, onCancel }: { saleId: s
   const returned = (items ?? []).reduce((a, i) => a + (ret[i.id] ?? 0) * i.unit_price_cents, 0);
   const added = rows.reduce((a, r) => a + r.quantity * r.unit_cents, 0);
   const newTotal = oldTotal - returned + added;
-  const paid = inst.filter((i) => i.paid_at).reduce((a, i) => a + i.amount_cents, 0);
+  const paid = inst.reduce((a, i) => a + (i.paid_cents ?? 0), 0);
   const openCount = inst.filter((i) => !i.paid_at).length;
   const remaining = newTotal - paid;
   const remainingItems = (items ?? []).reduce((a, i) => a + i.quantity - (ret[i.id] ?? 0), 0) + rows.length;

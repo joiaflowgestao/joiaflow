@@ -9,7 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCategories, useProfiles } from '@/hooks/useData';
 import { cn } from '@/lib/cn';
 import { addMonthsISO, dueSchedule, formatDateOnly, fromLocalInputs, toLocalInputs } from '@/lib/datetime';
-import { describeInstallments, formatCents, maskCentsInput, splitInstallments } from '@/lib/money';
+import { describePayment, formatCents, maskCentsInput, splitInstallments } from '@/lib/money';
 import { friendlyError, supabase } from '@/lib/supabase';
 import type { Sale, SaleItem } from '@/types/database';
 
@@ -61,7 +61,9 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
   const [installments, setInstallments] = useState(initial?.installments ?? 1);
   const [firstDue, setFirstDue] = useState(initial?.first_due_date ?? start.date);
   const [dueTouched, setDueTouched] = useState(Boolean(initial));
-  const [upfrontPaid, setUpfrontPaid] = useState(initial ? initial.upfront_paid : true);
+  // Valor pago no ato (entrada): já descontado do total, o restante vira parcelas
+  const [down, setDown] = useState(initial?.down_payment_cents ?? 0);
+  const [downText, setDownText] = useState(initial?.down_payment_cents ? formatCents(initial.down_payment_cents, false) : '');
   const [sellerId, setSellerId] = useState(initial?.seller_id ?? (isAdmin ? '' : profile?.id ?? ''));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -73,17 +75,18 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
     [profiles.data, initial?.seller_id],
   );
 
-  const plan = cents > 0 ? splitInstallments(cents, installments) : null;
-  const schedule = firstDue ? dueSchedule(firstDue, installments) : [];
+  const rest = Math.max(cents - down, 0);
+  const fullyPaid = cents > 0 && down >= cents;
+  const plan = rest > 0 ? splitInstallments(rest, installments) : null;
+  const schedule = firstDue && !fullyPaid ? dueSchedule(firstDue, installments) : [];
 
   /** Sugere o 1º vencimento: à vista = dia da venda; parcelado = 1 mês depois. */
-  function suggestDue(n: number, saleDate: string) {
-    if (!dueTouched && saleDate) setFirstDue(n === 1 ? saleDate : addMonthsISO(saleDate, 1));
+  function suggestDue(n: number, saleDate: string, d = down) {
+    if (!dueTouched && saleDate) setFirstDue(n === 1 && d === 0 ? saleDate : addMonthsISO(saleDate, 1));
   }
   function changeInstallments(n: number) {
     setInstallments(n);
     suggestDue(n, date);
-    if (!initial) setUpfrontPaid(n === 1);
   }
 
   function validate() {
@@ -96,8 +99,12 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
     else if (cents > MAX_CENTS) e.items = 'Valor acima do limite permitido.';
     if (!date || !time) e.date = 'Informe data e horário.';
     else if (new Date(fromLocalInputs(date, time)).getTime() > Date.now() + 5 * 60_000) e.date = 'A data da venda não pode estar no futuro.';
-    if (!firstDue) e.due = 'Informe o vencimento da 1ª parcela.';
-    else if (date && firstDue < date) e.due = 'O vencimento não pode ser antes da data da venda.';
+    if (down > cents && cents > 0) e.down = 'O valor pago no ato não pode ser maior que o total.';
+    if (!fullyPaid) {
+      if (!firstDue) e.due = 'Informe o vencimento da 1ª parcela.';
+      else if (date && firstDue < date) e.due = 'O vencimento não pode ser antes da data da venda.';
+      if (down > 0 && installments + 1 > 24) e.due = 'Máximo de 23 parcelas quando há entrada.';
+    }
     if (isAdmin && !sellerId) e.seller = 'Escolha o vendedor.';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -112,10 +119,12 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
 
     const payload = {
       customer_name: customer.trim().replace(/\s+/g, ' '),
-      installments,
       sold_at: fromLocalInputs(date, time),
-      first_due_date: firstDue,
-      upfront_paid: upfrontPaid,
+      first_due_date: fullyPaid ? date : firstDue,
+      installments: fullyPaid ? 1 : installments,
+      down_payment_cents: down,
+      // compatibilidade com vendas antigas que usavam "1ª parcela paga no ato"
+      upfront_paid: down === 0 && Boolean(initial?.upfront_paid),
       seller_id: seller.id,
       organization_id: seller.organization_id,
       items: items.map((i) => ({ category_id: i.category_id, quantity: i.quantity, unit_price_cents: i.unit_cents })),
@@ -209,35 +218,46 @@ export function SaleForm({ initial, onSaved, onCancel, submitLabel = 'Registrar 
         {errors.items && <p className="mt-1.5 text-sm text-red-700">{errors.items}</p>}
       </div>
 
-      <Select label="Parcelas" value={installments} onChange={(e) => changeInstallments(Number(e.target.value))}>
-        {INSTALLMENT_OPTIONS.map((n) => (
-          <option key={n} value={n}>{n === 1 ? 'À vista (1x)' : `${n}x`}{cents > 0 ? ` · ${formatCents(splitInstallments(cents, n).baseCents)}` : ''}</option>
-        ))}
-      </Select>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+        <Input label="Valor pago no ato" inputMode="numeric" value={downText} error={errors.down} placeholder="0,00"
+          leading={<span className="text-sm font-semibold">R$</span>} className="font-semibold"
+          hint={!errors.down ? 'Opcional: entrada paga agora' : undefined}
+          onChange={(e) => { const m = maskCentsInput(e.target.value); setDown(m.cents); setDownText(m.display); suggestDue(installments, date, m.cents); }} />
+        <div className="min-w-0">
+          <span className="field-label">Cliente ainda deve</span>
+          <div className={cn('flex h-[46px] items-center rounded-lg border px-3.5 metric text-lg', fullyPaid ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gold-200 bg-gold-50 text-navy')}>
+            {cents === 0 ? '—' : fullyPaid ? 'Quitado' : formatCents(rest)}
+          </div>
+        </div>
+      </div>
+
+      {!fullyPaid && (
+        <Select label={down > 0 ? 'Parcelas do restante' : 'Parcelas'} value={installments} onChange={(e) => changeInstallments(Number(e.target.value))}>
+          {INSTALLMENT_OPTIONS.map((n) => (
+            <option key={n} value={n}>{n === 1 ? (down > 0 ? '1x' : 'À vista (1x)') : `${n}x`}{rest > 0 ? ` · ${formatCents(splitInstallments(rest, n).baseCents)}` : ''}</option>
+          ))}
+        </Select>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <Input label="Data da venda" type="date" value={date} onChange={(e) => { setDate(e.target.value); suggestDue(installments, e.target.value); }} error={errors.date} leading={<CalendarDays className="h-4 w-4" />} />
         <Input label="Horário" type="time" value={time} onChange={(e) => setTime(e.target.value)} leading={<Clock className="h-4 w-4" />} />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      {!fullyPaid && (
         <Input label={installments === 1 ? 'Vencimento' : 'Vencimento da 1ª parcela'} type="date" value={firstDue} error={errors.due}
           onChange={(e) => { setFirstDue(e.target.value); setDueTouched(true); }} leading={<CalendarDays className="h-4 w-4" />}
           hint={installments > 1 && firstDue ? `As demais vencem todo dia ${Number(firstDue.slice(8))}.` : undefined} />
-        <label className="flex cursor-pointer items-center gap-3 self-end rounded-lg border border-navy/10 bg-white px-3.5 py-3 text-[15px] text-navy hover:border-gold-300">
-          <input type="checkbox" checked={upfrontPaid} onChange={(e) => setUpfrontPaid(e.target.checked)} className="h-4 w-4 accent-[#21165F]" />
-          {installments === 1 ? 'Pagamento recebido no ato' : '1ª parcela paga no ato (entrada)'}
-        </label>
-      </div>
+      )}
 
-      {plan && (
-        <div className="rounded-xl border border-gold-200 bg-gold-50 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-navy/70">Valor por parcela</span>
-            <span className="text-right font-semibold text-navy">{describeInstallments(cents, installments)}</span>
-          </div>
-          {installments > 1 && schedule.length > 0 && (
-            <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-gold-200 pt-2 text-xs text-navy/70 sm:grid-cols-3">
+      {cents > 0 && (
+        <div className="rounded-xl border border-gold-200 bg-gold-50 px-4 py-3 text-sm">
+          <div className="flex items-center justify-between py-0.5"><span className="text-navy/70">Total da venda</span><span className="metric text-navy">{formatCents(cents)}</span></div>
+          {down > 0 && <div className="flex items-center justify-between py-0.5"><span className="text-navy/70">Pago no ato</span><span className="metric text-emerald-700">− {formatCents(Math.min(down, cents))}</span></div>}
+          <div className="flex items-center justify-between border-t border-gold-200 pt-1.5 mt-1"><span className="font-semibold text-navy">{fullyPaid ? 'Pagamento' : 'A receber'}</span>
+            <span className="text-right font-semibold text-navy">{describePayment(cents, installments, down).replace(/^Entrada R\$ [\d.,]+ \+ /, '')}</span></div>
+          {plan && installments > 1 && schedule.length > 0 && (
+            <ul className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 border-t border-gold-200 pt-2 text-xs text-navy/70 sm:grid-cols-2">
               {schedule.map((d, i) => (
                 <li key={d + i} className="flex justify-between gap-2">
                   <span>{i + 1}ª · {formatDateOnly(d)}</span>

@@ -1,28 +1,32 @@
 // Exportação de relatórios em PDF (jsPDF) e Excel (SheetJS).
 // As bibliotecas são carregadas sob demanda para não pesar o app.
+import type { CommissionRow } from '@/lib/commission';
 import { formatDate, formatTime } from '@/lib/datetime';
+import { exchangeItemsLabel } from '@/lib/exchanges';
 import { formatCents } from '@/lib/money';
 import { itemsLabel, paymentSummary } from '@/lib/salesQuery';
-import { exchangeItemsLabel } from '@/lib/exchanges';
 import type { Exchange, SaleWithRelations, SalesSummary } from '@/types/database';
 
 export interface ReportData {
-  title: string;          // ex.: "Relatório de Novembro de 2026"
-  scope: string;          // ex.: "Empresa X · Todos os vendedores"
+  title: string;            // ex.: "Relatório de Novembro de 2026"
+  scope: string;            // ex.: "Empresa X · Todos os vendedores"
   summary: SalesSummary;
-  previous: SalesSummary;
+  previous: SalesSummary | null;  // mês anterior (null no relatório de maleta)
   months: { label: string; total_cents: number; count: number }[];
   sales: SaleWithRelations[];
   exchanges: Exchange[];
+  commissionRows: CommissionRow[];
   showSellers: boolean;
+  kit: { seller: string; period: string; notes: string | null } | null;
 }
 
 const ticket = (s: { total_cents: number; count: number }) => (s.count ? Math.round(s.total_cents / s.count) : 0);
 const pct = (part: number, total: number) => (total ? `${((part / total) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '0%');
-const delta = (cur: number, prev: number) => (prev ? `${cur >= prev ? '+' : ''}${(((cur - prev) / prev) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '—');
+const delta = (cur: number, prev: number) => (prev ? `${cur >= prev ? '+' : ''}${(((cur - prev) / prev) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '-');
 const exDate = (iso: string) => `${formatDate(iso)} ${formatTime(iso)}`;
 // PDF: só caracteres da fonte padrão (sem "→" ou "−" tipográfico)
 const signed = (c: number) => `${c > 0 ? '+' : c < 0 ? '-' : ''}${formatCents(Math.abs(c))}`;
+const plain = (c: number) => `${c < 0 ? '-' : ''}${formatCents(Math.abs(c))}`;
 const fileName = (r: ReportData, ext: string) =>
   `${r.title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}.${ext}`;
 
@@ -32,6 +36,7 @@ export async function exportPDF(r: ReportData) {
   const W = doc.internal.pageSize.getWidth();
   const navy: [number, number, number] = [13, 7, 55];
   const gold: [number, number, number] = [184, 166, 106];
+  const pdfTitle = r.title.replace(/—/g, '-');
 
   // Cabeçalho
   doc.setFillColor(...navy);
@@ -40,27 +45,15 @@ export async function exportPDF(r: ReportData) {
   doc.setFont('times', 'bold'); doc.setFontSize(22);
   doc.text('JoiaFlow', 40, 42);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  doc.text(r.title, 40, 62);
+  doc.text(pdfTitle, 40, 62);
   doc.setTextColor(...gold); doc.setFontSize(9);
   doc.text(r.scope, 40, 76);
   doc.text(`Gerado em ${formatDate(new Date())} ${formatTime(new Date())}`, W - 40, 76, { align: 'right' });
 
   const s = r.summary, p = r.previous;
+  const commission = s.commission_cents ?? 0;
   const head = { fillColor: navy, textColor: [247, 244, 236] as [number, number, number], fontStyle: 'bold' as const };
   const base = { styles: { fontSize: 9, cellPadding: 5 }, headStyles: head, alternateRowStyles: { fillColor: [247, 244, 236] as [number, number, number] }, margin: { left: 40, right: 40 } };
-
-  autoTable(doc, {
-    ...base, startY: 104,
-    head: [['Indicador', 'Período', 'Mês anterior', 'Variação']],
-    body: [
-      ['Faturamento', formatCents(s.total_cents), formatCents(p.total_cents), delta(s.total_cents, p.total_cents)],
-      ['Quantidade de vendas', String(s.count), String(p.count), delta(s.count, p.count)],
-      ['Peças vendidas', String(s.items_count ?? 0), String(p.items_count ?? 0), delta(s.items_count ?? 0, p.items_count ?? 0)],
-      ['Ticket médio', formatCents(ticket(s)), formatCents(ticket(p)), delta(ticket(s), ticket(p))],
-      ['Comissão', formatCents(s.commission_cents ?? 0), formatCents(p.commission_cents ?? 0), delta(s.commission_cents ?? 0, p.commission_cents ?? 0)],
-    ],
-  });
-
   const next = () => ((doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 22);
   const section = (title: string, y0: number) => {
     let y = y0;
@@ -69,9 +62,43 @@ export async function exportPDF(r: ReportData) {
     doc.setTextColor(...navy); doc.setFont('times', 'bold'); doc.setFontSize(13); doc.text(title, 40, y); return y + 8;
   };
 
+  // Resumo
+  autoTable(doc, p ? {
+    ...base, startY: 104,
+    head: [['Indicador', 'Período', 'Mês anterior', 'Variação']],
+    body: [
+      ['Faturamento', formatCents(s.total_cents), formatCents(p.total_cents), delta(s.total_cents, p.total_cents)],
+      ['Quantidade de vendas', String(s.count), String(p.count), delta(s.count, p.count)],
+      ['Peças vendidas', String(s.items_count ?? 0), String(p.items_count ?? 0), delta(s.items_count ?? 0, p.items_count ?? 0)],
+      ['Ticket médio', formatCents(ticket(s)), formatCents(ticket(p)), delta(ticket(s), ticket(p))],
+      ['Comissão', formatCents(commission), formatCents(p.commission_cents ?? 0), delta(commission, p.commission_cents ?? 0)],
+    ],
+  } : {
+    ...base, startY: 104,
+    head: [['Indicador', 'Valor']],
+    body: [
+      ['Faturamento', formatCents(s.total_cents)],
+      ['Quantidade de vendas', String(s.count)],
+      ['Peças vendidas', String(s.items_count ?? 0)],
+      ['Ticket médio', formatCents(ticket(s))],
+      ['Trocas no período', `${s.exchanges_count ?? 0} (${signed(s.exchanges_cents ?? 0)})`],
+    ],
+  });
+
+  // Acerto da maleta
+  if (r.kit) {
+    autoTable(doc, { ...base, startY: section('Acerto da maleta', next()),
+      head: [['Vendedora', 'Período', 'Total vendido', 'Comissão', 'Parte da empresa']],
+      body: [
+        [r.kit.seller, r.kit.period, formatCents(s.total_cents), formatCents(commission), formatCents(s.total_cents - commission)],
+        ...(r.kit.notes ? [[{ content: `Observação: ${r.kit.notes}`, colSpan: 5, styles: { fontStyle: 'italic' as const } }]] : []),
+      ],
+    });
+  }
+
   autoTable(doc, { ...base, startY: section('Vendas por categoria', next()),
     head: [['Categoria', 'Peças', 'Faturamento', '% do total']],
-    body: s.by_category.map((c) => [c.name, String(c.count), formatCents(c.total_cents), pct(c.total_cents, s.total_cents)]),
+    body: s.by_category.map((c) => [c.name, String(c.count), plain(c.total_cents), pct(c.total_cents, s.total_cents)]),
   });
 
   if (r.showSellers) {
@@ -81,18 +108,37 @@ export async function exportPDF(r: ReportData) {
     });
   }
 
-  autoTable(doc, { ...base, startY: section('Comparativo com meses anteriores', next()),
-    head: [['Mês', 'Vendas', 'Faturamento', 'Ticket médio']],
-    body: r.months.map((m) => [m.label, String(m.count), formatCents(m.total_cents), formatCents(ticket(m))]),
+  // Comissão detalhada (venda a venda + trocas)
+  autoTable(doc, { ...base, startY: section('Comissão detalhada', next()),
+    styles: { fontSize: 8, cellPadding: 4, valign: 'top' },
+    head: [['Data', 'Tipo', 'Cliente', ...(r.showSellers ? ['Vendedora'] : []), 'Valor', '%', 'Comissão']],
+    body: [
+      ...r.commissionRows.map((c) => [
+        formatDate(c.date), c.kind === 'troca' ? 'Troca' : 'Venda',
+        c.note ? `${c.customer}\n${c.note}` : c.customer,
+        ...(r.showSellers ? [c.seller] : []),
+        plain(c.value_cents), `${c.percent.toLocaleString('pt-BR')}%`, plain(c.commission_cents),
+      ]),
+      [{ content: 'Total', colSpan: r.showSellers ? 4 : 3, styles: { fontStyle: 'bold' as const } },
+        { content: plain(r.commissionRows.reduce((a, c) => a + c.value_cents, 0)), styles: { fontStyle: 'bold' as const } }, '',
+        { content: plain(r.commissionRows.reduce((a, c) => a + c.commission_cents, 0)), styles: { fontStyle: 'bold' as const } }],
+    ],
   });
+
+  if (r.months.length) {
+    autoTable(doc, { ...base, startY: section('Comparativo com meses anteriores', next()),
+      head: [['Mês', 'Vendas', 'Faturamento', 'Ticket médio']],
+      body: r.months.map((m) => [m.label, String(m.count), formatCents(m.total_cents), formatCents(ticket(m))]),
+    });
+  }
 
   autoTable(doc, { ...base, startY: section('Vendas do período', next()),
     styles: { fontSize: 8, cellPadding: 4 },
-    head: [['Data', 'Hora', 'Cliente', 'Itens', 'Valor', 'Parcelas', ...(r.showSellers ? ['Vendedor'] : []), 'Pagas']],
+    head: [['Data', 'Hora', 'Cliente', 'Itens', 'Valor atual', 'Pago no ato', ...(r.showSellers ? ['Vendedor'] : []), 'Pagas']],
     body: r.sales.map((x) => {
       const ps = paymentSummary(x);
       return [formatDate(x.sold_at), formatTime(x.sold_at), x.customer_name, itemsLabel(x), formatCents(x.total_cents),
-        x.installments === 1 ? 'À vista' : `${x.installments}x`, ...(r.showSellers ? [x.seller?.full_name ?? ''] : []), `${ps.paid}/${ps.total}`];
+        x.down_payment_cents ? formatCents(x.down_payment_cents) : '-', ...(r.showSellers ? [x.seller?.full_name ?? ''] : []), `${ps.paid}/${ps.total}`];
     }),
   });
 
@@ -124,19 +170,50 @@ export async function exportExcel(r: ReportData) {
   const XLSX = await import('xlsx');
   const money = (c: number) => Math.round(c) / 100; // número real no Excel (formatável)
   const s = r.summary, p = r.previous;
+  const commission = s.commission_cents ?? 0;
   const wb = XLSX.utils.book_new();
 
-  const resumo = XLSX.utils.aoa_to_sheet([
-    [r.title], [r.scope], [],
-    ['Indicador', 'Período', 'Mês anterior'],
-    ['Faturamento (R$)', money(s.total_cents), money(p.total_cents)],
-    ['Quantidade de vendas', s.count, p.count],
-    ['Peças vendidas', s.items_count ?? 0, p.items_count ?? 0],
-    ['Ticket médio (R$)', money(ticket(s)), money(ticket(p))],
-    ['Comissão (R$)', money(s.commission_cents ?? 0), money(p.commission_cents ?? 0)],
-  ]);
-  resumo['!cols'] = [{ wch: 26 }, { wch: 16 }, { wch: 16 }];
+  const resumoRows: (string | number)[][] = [[r.title], [r.scope], []];
+  if (p) {
+    resumoRows.push(
+      ['Indicador', 'Período', 'Mês anterior'],
+      ['Faturamento (R$)', money(s.total_cents), money(p.total_cents)],
+      ['Quantidade de vendas', s.count, p.count],
+      ['Peças vendidas', s.items_count ?? 0, p.items_count ?? 0],
+      ['Ticket médio (R$)', money(ticket(s)), money(ticket(p))],
+      ['Comissão (R$)', money(commission), money(p.commission_cents ?? 0)],
+    );
+  } else {
+    resumoRows.push(
+      ['Indicador', 'Valor'],
+      ['Faturamento (R$)', money(s.total_cents)],
+      ['Quantidade de vendas', s.count],
+      ['Peças vendidas', s.items_count ?? 0],
+      ['Ticket médio (R$)', money(ticket(s))],
+      ['Comissão (R$)', money(commission)],
+    );
+  }
+  if (r.kit) {
+    resumoRows.push([], ['Acerto da maleta'], ['Vendedora', r.kit.seller], ['Período', r.kit.period],
+      ['Total vendido (R$)', money(s.total_cents)], ['Comissão (R$)', money(commission)], ['Parte da empresa (R$)', money(s.total_cents - commission)]);
+    if (r.kit.notes) resumoRows.push(['Observação', r.kit.notes]);
+  }
+  const resumo = XLSX.utils.aoa_to_sheet(resumoRows);
+  resumo['!cols'] = [{ wch: 26 }, { wch: 22 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, resumo, 'Resumo');
+
+  const com = XLSX.utils.json_to_sheet([
+    ...r.commissionRows.map((c) => ({
+      Data: formatDate(c.date), Tipo: c.kind === 'troca' ? 'Troca' : 'Venda', Cliente: c.customer,
+      ...(r.showSellers ? { Vendedora: c.seller } : {}),
+      'Valor (R$)': money(c.value_cents), 'Comissão (%)': c.percent, 'Comissão (R$)': money(c.commission_cents), Observação: c.note ?? '',
+    })),
+    { Data: 'TOTAL', Tipo: '', Cliente: '', ...(r.showSellers ? { Vendedora: '' } : {}),
+      'Valor (R$)': money(r.commissionRows.reduce((a, c) => a + c.value_cents, 0)), 'Comissão (%)': '',
+      'Comissão (R$)': money(r.commissionRows.reduce((a, c) => a + c.commission_cents, 0)), Observação: '' },
+  ]);
+  com['!cols'] = [{ wch: 11 }, { wch: 7 }, { wch: 28 }, ...(r.showSellers ? [{ wch: 22 }] : []), { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 44 }];
+  XLSX.utils.book_append_sheet(wb, com, 'Comissão detalhada');
 
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
     s.by_category.map((c) => ({ Categoria: c.name, Peças: c.count, 'Faturamento (R$)': money(c.total_cents) })),
@@ -148,20 +225,23 @@ export async function exportExcel(r: ReportData) {
     ), 'Por vendedor');
   }
 
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
-    r.months.map((m) => ({ Mês: m.label, Vendas: m.count, 'Faturamento (R$)': money(m.total_cents) })),
-  ), 'Meses anteriores');
+  if (r.months.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
+      r.months.map((m) => ({ Mês: m.label, Vendas: m.count, 'Faturamento (R$)': money(m.total_cents) })),
+    ), 'Meses anteriores');
+  }
 
   const vendas = XLSX.utils.json_to_sheet(r.sales.map((x) => {
     const ps = paymentSummary(x);
     return {
       Data: formatDate(x.sold_at), Hora: formatTime(x.sold_at), Cliente: x.customer_name, Itens: itemsLabel(x),
-      'Peças': (x.items ?? []).reduce((a, i) => a + i.quantity, 0) || 1, 'Valor (R$)': money(x.total_cents), Parcelas: x.installments, 'Valor da parcela (R$)': money(x.installment_cents),
+      'Peças': (x.items ?? []).reduce((a, i) => a + i.quantity, 0) || 1, 'Valor atual (R$)': money(x.total_cents),
+      'Pago no ato (R$)': money(x.down_payment_cents ?? 0), Parcelas: x.installments,
       ...(r.showSellers ? { Vendedor: x.seller?.full_name ?? '', Empresa: x.organization?.name ?? '' } : {}),
       'Parcelas pagas': `${ps.paid}/${ps.total}`,
     };
   }));
-  vendas['!cols'] = [{ wch: 11 }, { wch: 7 }, { wch: 30 }, { wch: 30 }, { wch: 7 }, { wch: 12 }, { wch: 9 }, { wch: 18 }, { wch: 24 }, { wch: 20 }, { wch: 14 }];
+  vendas['!cols'] = [{ wch: 11 }, { wch: 7 }, { wch: 30 }, { wch: 30 }, { wch: 7 }, { wch: 15 }, { wch: 15 }, { wch: 9 }, { wch: 24 }, { wch: 20 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, vendas, 'Vendas');
 
   if (r.exchanges.length) {

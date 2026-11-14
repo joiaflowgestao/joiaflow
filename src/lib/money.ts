@@ -53,3 +53,17 @@ export function describeInstallments(totalCents: number, installments: number): 
   if (p.remainderCents === 0) return `${installments}x de ${formatCents(p.baseCents)}`;
   return `1x de ${formatCents(p.firstCents)} + ${installments - 1}x de ${formatCents(p.baseCents)}`;
 }
+
+/** Comissão de um valor (arredonda como o banco: metade para longe do zero). */
+export function commissionOf(cents: number, percent: number): number {
+  const raw = (Math.abs(cents) * percent) / 100;
+  return Math.sign(cents) * Math.round(raw);
+}
+
+/** Descrição do pagamento com entrada: "Entrada R$ 50,00 + 2x de R$ 25,00" */
+export function describePayment(totalCents: number, installments: number, downCents = 0): string {
+  if (downCents <= 0) return describeInstallments(totalCents, installments);
+  const rest = totalCents - Math.min(downCents, totalCents);
+  if (rest <= 0) return `Pago no ato · ${formatCents(totalCents)}`;
+  return `Entrada ${formatCents(downCents)} + ${describeInstallments(rest, installments).replace('À vista · ', '1x de ')}`;
+}

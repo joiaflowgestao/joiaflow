@@ -7,7 +7,7 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime } from '@/lib/datetime';
-import { describeInstallments, formatCents } from '@/lib/money';
+import { describePayment, formatCents } from '@/lib/money';
 import { supabase } from '@/lib/supabase';
 import type { Sale, SaleItem } from '@/types/database';
 
@@ -39,7 +39,7 @@ export function NewSalePage() {
               <p className="font-display text-3xl text-navy">Venda registrada!</p>
               <p className="mt-3 text-navy/70"><strong className="text-navy">{saved.customer_name}</strong> · <span className="metric text-navy">{formatCents(saved.total_cents)}</span></p>
               {items.length > 0 && <p className="mt-1 text-sm text-navy/70">{items.map((i) => `${i.quantity}x ${i.category?.name}`).join(' · ')}</p>}
-              <p className="text-sm text-navy/55">{describeInstallments(saved.total_cents, saved.installments)} · {formatDateTime(saved.sold_at)}</p>
+              <p className="text-sm text-navy/55">{describePayment(saved.total_cents, saved.installments, saved.down_payment_cents)} · {formatDateTime(saved.sold_at)}</p>
               <div className="mt-8 flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <Button size="lg" onClick={() => { setSaved(null); setFormKey((k) => k + 1); }}><Plus className="h-4 w-4" /> Registrar outra venda</Button>
                 <Link to="/historico"><Button size="lg" variant="outline" className="w-full"><History className="h-4 w-4" /> Ver histórico</Button></Link>

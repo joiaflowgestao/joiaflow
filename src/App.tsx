@@ -20,6 +20,7 @@ const NewSalePage = lazy(() => import('@/pages/sales/NewSalePage').then((m) => (
 const HistoryPage = lazy(() => import('@/pages/sales/HistoryPage').then((m) => ({ default: m.HistoryPage })));
 const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const ExchangesPage = lazy(() => import('@/pages/ExchangesPage').then((m) => ({ default: m.ExchangesPage })));
+const KitsPage = lazy(() => import('@/pages/KitsPage').then((m) => ({ default: m.KitsPage })));
 const FinancePage = lazy(() => import('@/pages/FinancePage').then((m) => ({ default: m.FinancePage })));
 const SellersPage = lazy(() => import('@/pages/admin/SellersPage').then((m) => ({ default: m.SellersPage })));
 
@@ -48,6 +49,7 @@ export default function App() {
                 <Route path="relatorios" element={<ReportsPage />} />
                 <Route path="lancamentos" element={<FinancePage />} />
                 <Route path="trocas" element={<ExchangesPage />} />
+                <Route path="maletas" element={<KitsPage />} />
                 <Route path="configuracoes" element={<SettingsPage />} />
                 <Route element={<RequireAdmin />}>
                   <Route path="vendedores" element={<SellersPage />} />

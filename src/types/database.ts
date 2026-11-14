@@ -54,6 +54,8 @@ export interface Sale {
   notes: string | null;
   first_due_date: string;
   upfront_paid: boolean;
+  down_payment_cents: number;     // valor pago no ato (entrada)
+  exchange_delta_cents: number;   // soma das diferenças de trocas (contam no mês da troca)
   created_by: string | null;
   updated_by: string | null;
   created_at: string;
@@ -98,8 +100,23 @@ export interface Installment {
   number: number;
   due_date: string; // AAAA-MM-DD
   amount_cents: number;
-  paid_at: string | null;
+  paid_cents: number;          // quanto já foi abatido desta parcela (pagamentos parciais)
+  paid_at: string | null;      // preenchido quando a parcela fica totalmente paga
   paid_by: string | null;
+}
+
+/** Pagamento recebido da cliente (qualquer valor; abatido nas parcelas). */
+export interface Payment {
+  id: string;
+  sale_id: string;
+  organization_id: string;
+  amount_cents: number;
+  paid_on: string; // AAAA-MM-DD
+  note: string | null;
+  kind: 'payment' | 'down_payment';
+  created_by: string | null;
+  created_at: string;
+  user?: Pick<Profile, 'full_name'> | null;
 }
 
 /** Venda com dados relacionados (para listagens). */
@@ -117,6 +134,7 @@ export interface InstallmentWithSale extends Installment {
     id: string;
     customer_name: string;
     installments: number;
+    total_cents?: number;
     seller_id: string;
     seller: Pick<Profile, 'full_name'> | null;
   };
@@ -128,6 +146,8 @@ export interface SalesSummary {
   count: number;
   items_count?: number;
   commission_cents?: number;
+  exchanges_count?: number;
+  exchanges_cents?: number;
   by_category: SummaryItem[];
   by_seller: SummaryItem[];
   by_day: { day: string; total_cents: number; count: number }[];
@@ -165,5 +185,18 @@ export interface Exchange {
   refund_cents: number;
   created_at: string;
   user?: Pick<Profile, 'full_name'> | null;
-  sale?: { id: string; customer_name: string; seller_id: string; organization_id: string; seller: Pick<Profile, 'full_name'> | null } | null;
+  sale?: { id: string; customer_name: string; seller_id: string; organization_id: string; sold_at?: string; seller: Pick<Profile, 'full_name'> | null } | null;
+}
+
+/** Maleta: período em que a vendedora fica com as semijoias da empresa. */
+export interface Kit {
+  id: string;
+  organization_id: string;
+  seller_id: string;
+  received_on: string;        // AAAA-MM-DD
+  returned_on: string | null; // AAAA-MM-DD (null = em aberto)
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  seller?: Pick<Profile, 'full_name'> | null;
 }

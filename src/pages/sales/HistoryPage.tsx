@@ -16,7 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCategories, useProfiles } from '@/hooks/useData';
 import { cn } from '@/lib/cn';
 import { currentYearMonth, formatDate, formatTime, MONTHS_PT, todayISO } from '@/lib/datetime';
-import { formatCents } from '@/lib/money';
+import { describePayment, formatCents } from '@/lib/money';
 import { buildSalesQuery, itemsLabel, paymentSummary, saleItems, type SalesFilters } from '@/lib/salesQuery';
 import { friendlyError, supabase } from '@/lib/supabase';
 import type { SaleWithRelations } from '@/types/database';
@@ -175,7 +175,7 @@ export function HistoryPage() {
                     <td className="px-3 py-3"><PaymentBadge sale={s} /></td>
                     <td className="whitespace-nowrap px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       {canEdit(s) && <button className="rounded-lg p-2 text-navy/50 hover:bg-navy/5 hover:text-navy" title="Editar" onClick={() => setEditing(s)}><Pencil className="h-4 w-4" /></button>}
-                      {isAdmin && <button className="rounded-lg p-2 text-navy/50 hover:bg-red-50 hover:text-red-700" title="Excluir" onClick={() => setDeleting(s)}><Trash2 className="h-4 w-4" /></button>}
+                      {canEdit(s) && <button className="rounded-lg p-2 text-navy/50 hover:bg-red-50 hover:text-red-700" title="Excluir" onClick={() => setDeleting(s)}><Trash2 className="h-4 w-4" /></button>}
                     </td>
                   </tr>
                 ))}
@@ -224,7 +224,7 @@ export function HistoryPage() {
               <Info label="Cliente" value={detail.customer_name} />
               <Info label="Data" value={`${formatDate(detail.sold_at)} às ${formatTime(detail.sold_at)}`} />
               <Info label="Valor" value={formatCents(detail.total_cents)} />
-              <Info label="Pagamento" value={detail.installments === 1 ? 'À vista' : `${detail.installments} parcelas`} />
+              <Info label="Pagamento" value={detail.exchange_delta_cents ? `${detail.installments} parcela(s) · ajustado por troca` : describePayment(detail.total_cents, detail.installments, detail.down_payment_cents)} />
               <Info label="Vendedor" value={detail.seller?.full_name} />
               {isAdmin && detail.organization && <Info label="Empresa" value={detail.organization.name} />}
             </div>
@@ -244,11 +244,11 @@ export function HistoryPage() {
             <SaleExchanges saleId={detail.id} />
             <div>
               <p className="field-label">Parcelas</p>
-              <InstallmentList saleId={detail.id} customer={detail.customer_name} total={detail.total_cents} onChange={load} />
+              <InstallmentList saleId={detail.id} customer={detail.customer_name} total={detail.total_cents} hasDownPayment={detail.down_payment_cents > 0} onChange={load} />
             </div>
-            {(canEdit(detail) || isAdmin || canExchange(detail)) && (
+            {(canEdit(detail) || canExchange(detail)) && (
               <div className="flex flex-wrap justify-end gap-2 border-t border-navy/[0.06] pt-4">
-                {isAdmin && <Button variant="ghost" className="text-red-700 hover:bg-red-50" onClick={() => setDeleting(detail)}><Trash2 className="h-4 w-4" /> Excluir</Button>}
+                {canEdit(detail) && <Button variant="ghost" className="text-red-700 hover:bg-red-50" onClick={() => setDeleting(detail)}><Trash2 className="h-4 w-4" /> Excluir</Button>}
                 {canExchange(detail) && <Button variant="gold" onClick={() => { setExchanging(detail); setDetail(null); }}><ArrowLeftRight className="h-4 w-4" /> Fazer troca</Button>}
                 {canEdit(detail) && <Button variant="outline" onClick={() => { setEditing(detail); setDetail(null); }}><Pencil className="h-4 w-4" /> Editar</Button>}
               </div>
