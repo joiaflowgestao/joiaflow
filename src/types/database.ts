@@ -146,3 +146,24 @@ export interface FinancialEntry {
   updated_at: string;
   user?: Pick<Profile, 'full_name'> | null;
 }
+
+export interface ExchangeItem { category_id: string; name: string; quantity: number; unit_price_cents: number }
+
+/** Troca registrada (altera a venda original). */
+export interface Exchange {
+  id: string;
+  sale_id: string;
+  organization_id: string;
+  user_id: string | null;
+  reason: string;
+  returned_items: ExchangeItem[];
+  new_items: ExchangeItem[];
+  old_total_cents: number;
+  new_total_cents: number;
+  difference_cents: number;
+  paid_cents: number;
+  refund_cents: number;
+  created_at: string;
+  user?: Pick<Profile, 'full_name'> | null;
+  sale?: { id: string; customer_name: string; seller_id: string; organization_id: string; seller: Pick<Profile, 'full_name'> | null } | null;
+}

@@ -15,6 +15,7 @@ Arquitetura detalhada: [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)
 | Histórico (filtros, busca, paginação, edição/exclusão auditadas, pagamentos) | ✅ |
 | Relatórios mensais (comparativos, comissão, PDF e Excel) | ✅ |
 | Lançamentos financeiros (controle pessoal de entradas e saídas) | ✅ |
+| Trocas (devolução + itens novos, recálculo de valor e parcelas, motivo) | ✅ |
 | Vendedores (cadastro pelo admin, senha, ativar/desativar) | ✅ |
 | Empresas (gestão de várias empresas) | ⏳ em desenvolvimento |
 
@@ -52,6 +53,7 @@ No **SQL Editor**, execute **em ordem** os arquivos de `supabase/migrations/`:
 7. `20261113000007_category_pulseira.sql`
 8. `20261113000008_category_tornozeleira.sql`
 9. `20261113000009_commission_financial_entries.sql`
+10. `20261114000010_exchanges.sql`
 
 (Ou, com o Supabase CLI: `npx supabase link --project-ref SEU_REF && npx supabase db push`.)
 
@@ -90,7 +92,7 @@ npm run dev                  # http://localhost:5173/joiaflow/
 | `npm run dev` | Servidor de desenvolvimento |
 | `npm run build` | Typecheck + build de produção |
 | `npm test` | Testes unitários (dinheiro, parcelas, fuso horário) |
-| `./supabase/tests/run.sh` | 60 testes de segurança/parcelas num PostgreSQL local descartável |
+| `./supabase/tests/run.sh` | 73 testes de segurança/parcelas num PostgreSQL local descartável |
 
 ## Segurança — resumo
 - Sem cadastro público; usuários só pela Edge Function `admin-users`.

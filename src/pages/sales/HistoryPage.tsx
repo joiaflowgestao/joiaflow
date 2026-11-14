@@ -1,5 +1,6 @@
-import { ChevronLeft, ChevronRight, Pencil, Search, Trash2, X } from 'lucide-react';
+import { ArrowLeftRight, ChevronLeft, ChevronRight, Pencil, Search, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ExchangeForm, SaleExchanges } from '@/components/sales/ExchangeForm';
 import { SaleForm } from '@/components/sales/SaleForm';
 import { InstallmentList, StatusBadge, dueStatus } from '@/components/sales/installments';
 import { Alert } from '@/components/ui/Alert';
@@ -15,7 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCategories, useProfiles } from '@/hooks/useData';
 import { cn } from '@/lib/cn';
 import { currentYearMonth, formatDate, formatTime, MONTHS_PT, todayISO } from '@/lib/datetime';
-import { describeInstallments, formatCents } from '@/lib/money';
+import { formatCents } from '@/lib/money';
 import { buildSalesQuery, itemsLabel, paymentSummary, saleItems, type SalesFilters } from '@/lib/salesQuery';
 import { friendlyError, supabase } from '@/lib/supabase';
 import type { SaleWithRelations } from '@/types/database';
@@ -59,6 +60,7 @@ export function HistoryPage() {
   const [detail, setDetail] = useState<SaleWithRelations | null>(null);
   const [editing, setEditing] = useState<SaleWithRelations | null>(null);
   const [deleting, setDeleting] = useState<SaleWithRelations | null>(null);
+  const [exchanging, setExchanging] = useState<SaleWithRelations | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   // Busca com atraso para não consultar a cada tecla
@@ -81,6 +83,7 @@ export function HistoryPage() {
   const pages = Math.max(1, Math.ceil(count / PAGE_SIZE));
   const sellers = useMemo(() => profiles.data.filter((p) => p.organization_id), [profiles.data]);
 
+  const canExchange = (s: SaleWithRelations) => isAdmin || s.seller_id === profile?.id;
   const canEdit = (s: SaleWithRelations) =>
     isAdmin || (s.seller_id === profile?.id && !!profile?.can_edit_own_sales && !!organization?.sellers_can_edit_sales);
 
@@ -221,7 +224,7 @@ export function HistoryPage() {
               <Info label="Cliente" value={detail.customer_name} />
               <Info label="Data" value={`${formatDate(detail.sold_at)} às ${formatTime(detail.sold_at)}`} />
               <Info label="Valor" value={formatCents(detail.total_cents)} />
-              <Info label="Pagamento" value={describeInstallments(detail.total_cents, detail.installments)} />
+              <Info label="Pagamento" value={detail.installments === 1 ? 'À vista' : `${detail.installments} parcelas`} />
               <Info label="Vendedor" value={detail.seller?.full_name} />
               {isAdmin && detail.organization && <Info label="Empresa" value={detail.organization.name} />}
             </div>
@@ -238,13 +241,15 @@ export function HistoryPage() {
                 ))}
               </ul>
             </div>
+            <SaleExchanges saleId={detail.id} />
             <div>
               <p className="field-label">Parcelas</p>
               <InstallmentList saleId={detail.id} customer={detail.customer_name} total={detail.total_cents} onChange={load} />
             </div>
-            {(canEdit(detail) || isAdmin) && (
-              <div className="flex justify-end gap-2 border-t border-navy/[0.06] pt-4">
+            {(canEdit(detail) || isAdmin || canExchange(detail)) && (
+              <div className="flex flex-wrap justify-end gap-2 border-t border-navy/[0.06] pt-4">
                 {isAdmin && <Button variant="ghost" className="text-red-700 hover:bg-red-50" onClick={() => setDeleting(detail)}><Trash2 className="h-4 w-4" /> Excluir</Button>}
+                {canExchange(detail) && <Button variant="gold" onClick={() => { setExchanging(detail); setDetail(null); }}><ArrowLeftRight className="h-4 w-4" /> Fazer troca</Button>}
                 {canEdit(detail) && <Button variant="outline" onClick={() => { setEditing(detail); setDetail(null); }}><Pencil className="h-4 w-4" /> Editar</Button>}
               </div>
             )}
@@ -256,6 +261,13 @@ export function HistoryPage() {
         {editing && (
           <SaleForm initial={editing} submitLabel="Salvar alterações" onCancel={() => setEditing(null)}
             onSaved={() => { setEditing(null); toast.success('Venda atualizada.'); load(); }} />
+        )}
+      </Modal>
+
+      <Modal open={!!exchanging} onClose={() => setExchanging(null)} title="Fazer troca" size="lg">
+        {exchanging && (
+          <ExchangeForm saleId={exchanging.id} customer={exchanging.customer_name} onCancel={() => setExchanging(null)}
+            onDone={() => { setExchanging(null); toast.success('Troca registrada e venda recalculada.'); load(); }} />
         )}
       </Modal>
 

@@ -1,7 +1,8 @@
 import { ArrowDownRight, ArrowUpRight, BadgePercent, FileSpreadsheet, FileText, Receipt, TrendingUp, Wallet } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CHART, compactBRL, tooltipStyle } from '@/components/charts/theme';
+import { ExchangeCard } from '@/components/sales/ExchangeForm';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { CategoryIcon } from '@/components/ui/CategoryIcon';
@@ -15,7 +16,9 @@ import { useMonthlyTotals, useSalesSummary } from '@/hooks/useSummary';
 import { cn } from '@/lib/cn';
 import { currentYearMonth, MONTHS_PT, MONTHS_SHORT_PT, monthRange, shiftMonth } from '@/lib/datetime';
 import { formatCents } from '@/lib/money';
+import { fetchExchanges } from '@/lib/exchanges';
 import { fetchAllSales } from '@/lib/salesQuery';
+import type { Exchange } from '@/types/database';
 import { friendlyError } from '@/lib/supabase';
 import { yearOptions } from '@/pages/sales/HistoryPage';
 
@@ -52,6 +55,10 @@ export function ReportsPage() {
   const sixRange = useMemo(() => ({ start: monthRange(first.year, first.month).start, end: range.end }), [first.year, first.month, range.end]);
 
   const cur = useSalesSummary(range, orgId, sellerId);
+  const [exchanges, setExchanges] = useState<Exchange[]>([]);
+  useEffect(() => {
+    fetchExchanges(range, { orgId: orgId || undefined, sellerId: sellerId || undefined }).then(setExchanges).catch(() => setExchanges([]));
+  }, [range, orgId, sellerId]);
   const before = useSalesSummary(prevRange, orgId, sellerId);
   const monthly = useMonthlyTotals(sixRange, orgId, sellerId);
   const s = cur.data;
@@ -75,7 +82,7 @@ export function ReportsPage() {
     try {
       const sales = await fetchAllSales({ year, month, orgId: orgId || undefined, sellerId: sellerId || undefined });
       const mod = await import('@/lib/exportReport');
-      const data = { title, scope, summary: s, previous: before.data, months: months.map((m) => ({ ...m, label: m.fullLabel })), sales, showSellers: isAdmin };
+      const data = { title, scope, summary: s, previous: before.data, months: months.map((m) => ({ ...m, label: m.fullLabel })), sales, exchanges, showSellers: isAdmin };
       await (kind === 'pdf' ? mod.exportPDF(data) : mod.exportExcel(data));
       toast.success(kind === 'pdf' ? 'PDF gerado.' : 'Planilha Excel gerada.');
     } catch (e) {
@@ -210,6 +217,12 @@ export function ReportsPage() {
               </div>
             )}
           </CardBody>
+        </Card>
+      )}
+      {exchanges.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader title="Trocas no período" subtitle={`${exchanges.length} troca${exchanges.length > 1 ? 's' : ''} · os valores das vendas já estão recalculados`} />
+          <CardBody><ul className="space-y-3">{exchanges.map((x) => <ExchangeCard key={x.id} ex={x} showSale />)}</ul></CardBody>
         </Card>
       )}
       <p className="mt-4 text-xs text-navy/45">Os relatórios consideram a data efetiva da venda (fuso de Brasília). Vendas excluídas não entram nos totais.</p>

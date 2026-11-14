@@ -3,7 +3,8 @@
 import { formatDate, formatTime } from '@/lib/datetime';
 import { formatCents } from '@/lib/money';
 import { itemsLabel, paymentSummary } from '@/lib/salesQuery';
-import type { SaleWithRelations, SalesSummary } from '@/types/database';
+import { exchangeItemsLabel } from '@/lib/exchanges';
+import type { Exchange, SaleWithRelations, SalesSummary } from '@/types/database';
 
 export interface ReportData {
   title: string;          // ex.: "Relatório de Novembro de 2026"
@@ -12,12 +13,16 @@ export interface ReportData {
   previous: SalesSummary;
   months: { label: string; total_cents: number; count: number }[];
   sales: SaleWithRelations[];
+  exchanges: Exchange[];
   showSellers: boolean;
 }
 
 const ticket = (s: { total_cents: number; count: number }) => (s.count ? Math.round(s.total_cents / s.count) : 0);
 const pct = (part: number, total: number) => (total ? `${((part / total) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '0%');
 const delta = (cur: number, prev: number) => (prev ? `${cur >= prev ? '+' : ''}${(((cur - prev) / prev) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : '—');
+const exDate = (iso: string) => `${formatDate(iso)} ${formatTime(iso)}`;
+// PDF: só caracteres da fonte padrão (sem "→" ou "−" tipográfico)
+const signed = (c: number) => `${c > 0 ? '+' : c < 0 ? '-' : ''}${formatCents(Math.abs(c))}`;
 const fileName = (r: ReportData, ext: string) =>
   `${r.title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}.${ext}`;
 
@@ -57,7 +62,12 @@ export async function exportPDF(r: ReportData) {
   });
 
   const next = () => ((doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 22);
-  const section = (title: string, y: number) => { doc.setTextColor(...navy); doc.setFont('times', 'bold'); doc.setFontSize(13); doc.text(title, 40, y); return y + 8; };
+  const section = (title: string, y0: number) => {
+    let y = y0;
+    // Título nunca fica sozinho no rodapé: se faltar espaço, começa na próxima página
+    if (y > doc.internal.pageSize.getHeight() - 110) { doc.addPage(); y = 50; }
+    doc.setTextColor(...navy); doc.setFont('times', 'bold'); doc.setFontSize(13); doc.text(title, 40, y); return y + 8;
+  };
 
   autoTable(doc, { ...base, startY: section('Vendas por categoria', next()),
     head: [['Categoria', 'Peças', 'Faturamento', '% do total']],
@@ -85,6 +95,22 @@ export async function exportPDF(r: ReportData) {
         x.installments === 1 ? 'À vista' : `${x.installments}x`, ...(r.showSellers ? [x.seller?.full_name ?? ''] : []), `${ps.paid}/${ps.total}`];
     }),
   });
+
+  if (r.exchanges.length) {
+    autoTable(doc, { ...base, startY: section('Trocas do período', next()),
+      styles: { fontSize: 8, cellPadding: 4, valign: 'top' },
+      columnStyles: { 5: { cellWidth: 150, fontStyle: 'italic' } },
+      head: [['Data', 'Cliente', 'Devolveu', 'Levou', 'Valor da venda', 'Motivo da troca']],
+      body: r.exchanges.map((x) => [
+        exDate(x.created_at),
+        `${x.sale?.customer_name ?? ''}${r.showSellers && x.sale?.seller?.full_name ? `\n(${x.sale.seller.full_name})` : ''}`,
+        exchangeItemsLabel(x.returned_items),
+        exchangeItemsLabel(x.new_items),
+        `Antes: ${formatCents(x.old_total_cents)}\nDepois: ${formatCents(x.new_total_cents)}\nDiferença: ${signed(x.difference_cents)}${x.refund_cents > 0 ? `\nDevolver: ${formatCents(x.refund_cents)}` : ''}`,
+        x.reason,
+      ]),
+    });
+  }
 
   const pages = doc.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
@@ -137,6 +163,18 @@ export async function exportExcel(r: ReportData) {
   }));
   vendas['!cols'] = [{ wch: 11 }, { wch: 7 }, { wch: 30 }, { wch: 30 }, { wch: 7 }, { wch: 12 }, { wch: 9 }, { wch: 18 }, { wch: 24 }, { wch: 20 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, vendas, 'Vendas');
+
+  if (r.exchanges.length) {
+    const trocas = XLSX.utils.json_to_sheet(r.exchanges.map((x) => ({
+      Data: exDate(x.created_at), Cliente: x.sale?.customer_name ?? '',
+      ...(r.showSellers ? { Vendedora: x.sale?.seller?.full_name ?? '' } : {}),
+      Devolveu: exchangeItemsLabel(x.returned_items), Levou: exchangeItemsLabel(x.new_items),
+      'Total antes (R$)': money(x.old_total_cents), 'Total depois (R$)': money(x.new_total_cents),
+      'Diferença (R$)': money(x.difference_cents), 'A devolver (R$)': money(x.refund_cents), 'Motivo da troca': x.reason,
+    })));
+    trocas['!cols'] = [{ wch: 16 }, { wch: 24 }, ...(r.showSellers ? [{ wch: 22 }] : []), { wch: 24 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 60 }];
+    XLSX.utils.book_append_sheet(wb, trocas, 'Trocas');
+  }
 
   XLSX.writeFile(wb, fileName(r, 'xlsx'));
 }

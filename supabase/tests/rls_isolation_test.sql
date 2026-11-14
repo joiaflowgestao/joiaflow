@@ -224,6 +224,65 @@ do $$ begin perform 1 from public.financial_entries; insert into pg_temp.results
 exception when insufficient_privilege then insert into pg_temp.results values ('Anônimo sem lançamentos', true); end $$;
 reset role;
 
+-- 13) Trocas
+-- Venda "Multi Itens" (A2): 2x brinco 45,00 + 1x anel 120,00 = 210,00 em 2x de 105,00. Paga a 1ª.
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a2');
+update public.installments i set paid_at = now() from public.sales s
+ where s.id = i.sale_id and s.customer_name = 'Multi Itens' and i.number = 1;
+-- Troca: devolve 1 brinco, leva 1 pulseira de 80,00 → novo total 245,00
+create table pg_temp.ex1 as
+select public.exchange_sale(
+  (select id from public.sales where customer_name = 'Multi Itens'),
+  'Brinco com defeito no fecho, trocou por pulseira',
+  jsonb_build_array(jsonb_build_object('item_id', (select i.id from public.sale_items i join public.sales s on s.id=i.sale_id join public.categories c on c.id=i.category_id where s.customer_name='Multi Itens' and c.slug='brinco'), 'quantity', 1)),
+  jsonb_build_array(jsonb_build_object('category_id', (select id from public.categories where slug='pulseira'), 'quantity', 1, 'unit_price_cents', 8000))
+) as r;
+insert into pg_temp.results select 'Troca: novo total recalculado (210 − 45 + 80 = 245)',
+  (select (r->>'new_total_cents')::bigint = 24500 and (r->>'difference_cents')::bigint = 3500 from pg_temp.ex1);
+insert into pg_temp.results select 'Troca feita mesmo com edição bloqueada na empresa (A)',
+  (select total_cents = 24500 from public.sales where customer_name='Multi Itens');
+insert into pg_temp.results select 'Troca: parcela paga preservada, diferença na parcela em aberto (105 paga + 140 aberta)',
+  (select array_agg(amount_cents order by number) = array[10500,14000]::bigint[]
+          and bool_and((number = 1) = (paid_at is not null))
+     from public.installments i join public.sales s on s.id=i.sale_id where s.customer_name='Multi Itens');
+insert into pg_temp.results select 'Troca: itens atualizados (1 brinco, 1 anel, 1 pulseira)',
+  (select sum(quantity) = 3 and count(*) = 3 from public.sale_items i join public.sales s on s.id=i.sale_id where s.customer_name='Multi Itens');
+insert into pg_temp.results select 'Troca: motivo registrado',
+  (select reason = 'Brinco com defeito no fecho, trocou por pulseira' from public.exchanges limit 1);
+reset role;
+create table pg_temp.ids2 as select id from public.sales where customer_name='Multi Itens';
+grant select on pg_temp.ids2 to authenticated;
+select pg_temp.expect_error('Troca sem motivo é rejeitada', '00000000-0000-0000-0000-0000000000a2',
+  $$select public.exchange_sale((select id from pg_temp.ids2), ' ', '[]'::jsonb, jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='anel'),'quantity',1,'unit_price_cents',100)))$$);
+select pg_temp.expect_error('Vendedora A1 não troca venda da A2', '00000000-0000-0000-0000-0000000000a1',
+  $$select public.exchange_sale((select id from pg_temp.ids2), 'Tentativa', '[]'::jsonb, jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='anel'),'quantity',1,'unit_price_cents',100)))$$);
+select pg_temp.expect_error('Vendedor B1 (outra empresa) não troca venda de A', '00000000-0000-0000-0000-0000000000b1',
+  $$select public.exchange_sale((select id from pg_temp.ids2), 'Tentativa', '[]'::jsonb, jsonb_build_array(jsonb_build_object('category_id',(select id from public.categories where slug='anel'),'quantity',1,'unit_price_cents',100)))$$);
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+insert into pg_temp.results select 'B1 não vê trocas da empresa A', (select count(*)=0 from public.exchanges);
+reset role;
+-- Troca que reduz o valor abaixo do já pago → valor a devolver
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a9');
+create table pg_temp.ex2 as
+select public.exchange_sale((select id from pg_temp.ids2), 'Devolveu o anel',
+  jsonb_build_array(jsonb_build_object('item_id', (select i.id from public.sale_items i join public.categories c on c.id=i.category_id where i.sale_id=(select id from pg_temp.ids2) and c.slug='anel'), 'quantity', 1)),
+  '[]'::jsonb) as r;
+insert into pg_temp.results select 'Troca para menos: novo total 125, pago 105 → resta 20 em aberto',
+  (select (r->>'new_total_cents')::bigint = 12500 and (r->>'refund_cents')::bigint = 0 from pg_temp.ex2)
+  and (select array_agg(amount_cents order by number) = array[10500,2000]::bigint[] from public.installments where sale_id=(select id from pg_temp.ids2));
+create table pg_temp.ex3 as
+select public.exchange_sale((select id from pg_temp.ids2), 'Devolveu a pulseira',
+  jsonb_build_array(jsonb_build_object('item_id', (select i.id from public.sale_items i join public.categories c on c.id=i.category_id where i.sale_id=(select id from pg_temp.ids2) and c.slug='pulseira'), 'quantity', 1)),
+  '[]'::jsonb) as r;
+insert into pg_temp.results select 'Pagou mais que o novo total → valor a devolver (105 − 45 = 60)',
+  (select (r->>'refund_cents')::bigint = 6000 and (r->>'new_total_cents')::bigint = 4500 from pg_temp.ex3)
+  and (select count(*)=1 and bool_and(paid_at is not null) from public.installments where sale_id=(select id from pg_temp.ids2));
+reset role;
+select pg_temp.expect_error('Não pode devolver todos os itens', '00000000-0000-0000-0000-0000000000a9',
+  $$select public.exchange_sale((select id from pg_temp.ids2), 'Devolveu tudo', jsonb_build_array(jsonb_build_object('item_id',(select id from public.sale_items where sale_id=(select id from pg_temp.ids2) limit 1),'quantity',1)), '[]'::jsonb)$$);
+select pg_temp.expect_error('Vendedor não grava troca direto na tabela', '00000000-0000-0000-0000-0000000000a2',
+  $$insert into public.exchanges(sale_id, organization_id, reason, old_total_cents, new_total_cents, difference_cents) select id, organization_id, 'x x x', 1, 1, 0 from public.sales limit 1$$);
+
 insert into pg_temp.results select 'Auditoria registrou soft_delete', exists(select 1 from public.audit_logs where action='soft_delete');
 
 select (case when ok then 'PASS' else 'FAIL' end) || '  ' || name from pg_temp.results;
